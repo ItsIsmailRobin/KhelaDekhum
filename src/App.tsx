@@ -38,6 +38,16 @@ function PlayIcon({ className = "h-9 w-9 text-white ml-1" }: { className?: strin
   );
 }
 
+function UnmuteIcon({ className = "h-9 w-9 text-white" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
+  );
+}
+
 async function clearAllSiteData() {
   try { localStorage.clear(); } catch {}
   try { sessionStorage.clear(); } catch {}
@@ -53,6 +63,23 @@ async function clearAllSiteData() {
         .replace(/^ +/, "")
         .replace(/=.*/, "=;expires=" + new Date(0).toUTCString() + ";path=/");
     });
+  } catch {}
+  try {
+    document.cookie.split(";").forEach((c) => {
+      const name = c.split("=")[0]?.trim();
+      if (name) document.cookie = `${name}=;expires=${new Date(0).toUTCString()};path=/;SameSite=Lax`;
+    });
+  } catch {}
+  try {
+    if ("indexedDB" in window && "databases" in indexedDB) {
+      const dbs = await (indexedDB as any).databases();
+      await Promise.all(dbs.map((db) => db.name ? new Promise<void>((resolve) => {
+        const req = indexedDB.deleteDatabase(db.name as string);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+        req.onblocked = () => resolve();
+      }) : Promise.resolve()));
+    }
   } catch {}
   window.location.reload();
 }
@@ -73,6 +100,7 @@ export default function App() {
   const hlsRef = useRef<Hls | null>(null);
   const retryRef = useRef<number | null>(null);
   const hideRef = useRef<number | null>(null);
+  const previousVolumeRef = useRef(getSavedVolume() ?? 1);
   const deadRef = useRef(false);
   const everRef = useRef(false);
   const restartCnt = useRef(0);
@@ -291,7 +319,10 @@ export default function App() {
       if (needsUnmute) return;
       const nextVolume = video.muted ? 0 : video.volume;
       setVolume(nextVolume);
-      saveVolume(nextVolume);
+      if (nextVolume > 0) {
+        previousVolumeRef.current = nextVolume;
+        saveVolume(nextVolume);
+      }
     };
 
     video.addEventListener("playing", onPlaying);
@@ -356,25 +387,32 @@ export default function App() {
     flashRef.current = window.setTimeout(() => setFlashAnim(null), 700);
   }, []);
 
+  const unmutePlayer = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const nextVolume = previousVolumeRef.current || volume || 1;
+    applyVolume(v, nextVolume);
+    saveVolume(nextVolume);
+    setVolume(nextVolume);
+    setNeedsUnmute(false);
+    setShowControls(true);
+    v.play().then(() => {
+      applyVolume(v, nextVolume);
+      setStatus("playing");
+      setIsPaused(false);
+      isPausedRef.current = false;
+      everRef.current = true;
+    }).catch(() => {
+      setNeedsUnmute(true);
+    });
+    showFlash("play");
+  }, [showFlash, volume]);
+
   const handlePlayerTap = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (touchDev && !showControls) { setShowControls(true); return; }
     if (needsUnmute) {
-      const nextVolume = volume || 1;
-      applyVolume(v, nextVolume);
-      saveVolume(nextVolume);
-      setVolume(nextVolume);
-      setNeedsUnmute(false);
-      setShowControls(true);
-      v.play().then(() => {
-        applyVolume(v, nextVolume);
-        setStatus("playing");
-        everRef.current = true;
-      }).catch(() => {
-        setNeedsUnmute(true);
-      });
-      showFlash("play");
+      unmutePlayer();
       return;
     }
     if (v.paused) {
@@ -392,7 +430,7 @@ export default function App() {
       setShowControls(true);
       if (hideRef.current) window.clearTimeout(hideRef.current);
     }
-  }, [touchDev, showControls, needsUnmute, volume, snapToLive, showFlash]);
+  }, [needsUnmute, volume, snapToLive, showFlash, unmutePlayer]);
 
   const manualRestart = useCallback(() => {
     restartCnt.current = 0;
@@ -404,23 +442,42 @@ export default function App() {
 
   const handleClearCache = useCallback(() => { setShowClearConfirm(true); }, []);
   const confirmClearCache = useCallback(() => { clearAllSiteData(); }, []);
+  const toggleMute = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.muted || volume === 0) {
+      const nextVolume = previousVolumeRef.current || 1;
+      applyVolume(v, nextVolume);
+      saveVolume(nextVolume);
+      setVolume(nextVolume);
+      setNeedsUnmute(false);
+    } else {
+      previousVolumeRef.current = volume || previousVolumeRef.current || 1;
+      v.muted = true;
+      setVolume(0);
+    }
+  }, [volume]);
   const handleVolumeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const next = Number(event.target.value) / 100;
     const v = videoRef.current;
     setVolume(next);
-    saveVolume(next);
+    if (next > 0) {
+      previousVolumeRef.current = next;
+      saveVolume(next);
+    }
     setNeedsUnmute(false);
     if (v) applyVolume(v, next);
   }, []);
 
   const isInitialLoading = status === "loading" && !everRef.current;
   const shouldShowUnmuteOverlay = needsUnmute && status === "playing";
-  const controlsVisible = showControls || status !== "playing" || isPaused || needsUnmute;
+  const controlsVisible = touchDev || showControls || status !== "playing" || isPaused || needsUnmute;
 
   return (
     <div
       ref={containerRef}
       className="relative h-screen w-screen bg-black overflow-hidden select-none"
+      style={{ height: "100dvh" }}
       onDoubleClick={toggleFullscreen}
     >
       <div className="absolute inset-0 pointer-events-none">
@@ -498,16 +555,19 @@ export default function App() {
       )}
 
       {shouldShowUnmuteOverlay && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-md">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-md" onClick={unmutePlayer}>
           <div className="relative flex flex-col items-center gap-5">
             <button
-              onClick={handlePlayerTap}
-              aria-label="Play"
+              onClick={(event) => {
+                event.stopPropagation();
+                unmutePlayer();
+              }}
+              aria-label="Unmute"
               className="flex h-20 w-20 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm animate-play-flash"
             >
-              <PlayIcon />
+              <UnmuteIcon />
             </button>
-            <p className="text-white font-semibold text-base tracking-wide">Connecting to stream</p>
+            <p className="text-white font-semibold text-base tracking-wide">Tap to unmute</p>
           </div>
         </div>
       )}
@@ -573,7 +633,7 @@ export default function App() {
       >
         <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
 
-        <div className="relative flex items-center justify-between gap-2 rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 px-2 sm:px-3 py-2">
+        <div className="relative flex items-center justify-between gap-1.5 sm:gap-2 rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 px-1.5 sm:px-3 py-2">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             <ControlBtn onClick={manualRestart} aria-label="Reload" title="Reload stream" isTouch={touchDev}>
               <svg className="h-4 w-4 sm:h-5 sm:w-5 text-white transition-transform duration-500 group-hover:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -581,14 +641,22 @@ export default function App() {
               </svg>
             </ControlBtn>
 
-            <div className="flex h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/10">
-              <svg className="h-4 w-4 sm:h-5 sm:w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
-              </svg>
-            </div>
+            <ControlBtn onClick={toggleMute} aria-label={volume === 0 ? "Unmute" : "Mute"} title={volume === 0 ? "Unmute" : "Mute"} isTouch={touchDev}>
+              {volume === 0 ? (
+                <svg className="h-4 w-4 sm:h-5 sm:w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <line x1="23" y1="9" x2="17" y2="15" />
+                  <line x1="17" y1="9" x2="23" y2="15" />
+                </svg>
+              ) : (
+                <svg className="h-4 w-4 sm:h-5 sm:w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                </svg>
+              )}
+            </ControlBtn>
 
-            <div className="flex items-center flex-shrink min-w-[54px] w-16 sm:w-24 lg:w-28">
+            <div className="flex items-center flex-shrink min-w-[42px] w-12 sm:w-24 lg:w-28">
               <input
                 aria-label="Volume"
                 type="range"
