@@ -625,7 +625,7 @@ export default function App() {
             >
               <PlayerIconShell persistent><UnmuteIcon /></PlayerIconShell>
             </button>
-            <p className="text-white font-semibold text-base tracking-wide">Tap to unmute</p>
+            <p className="text-white font-semibold text-base tracking-wide">TAP TO UNMUTE</p>
           </div>
         </div>
       )}
