@@ -25,6 +25,19 @@ function applyVolume(video: HTMLVideoElement, value: number) {
   video.muted = video.volume === 0;
 }
 
+function PlayIcon({ className = "h-9 w-9 text-white ml-1" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 512 512" fill="none" aria-hidden="true">
+      <path
+        d="M180 151.8v208.4c0 24.2 26.8 38.8 47.1 25.7l161.5-104.2c18.6-12 18.6-39.4 0-51.4L227.1 126.1C206.8 113 180 127.6 180 151.8Z"
+        stroke="currentColor"
+        strokeWidth="38"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 async function clearAllSiteData() {
   try { localStorage.clear(); } catch {}
   try { sessionStorage.clear(); } catch {}
@@ -73,6 +86,7 @@ export default function App() {
   const [volume, setVolume] = useState(() => getSavedVolume() ?? 1);
   const [streamUrl, setStreamUrl] = useState("");
   const [needsUnmute, setNeedsUnmute] = useState(() => getSavedVolume() === null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const iosDevice = isIOS();
   const touchDev = isTouch();
@@ -352,7 +366,14 @@ export default function App() {
       saveVolume(nextVolume);
       setVolume(nextVolume);
       setNeedsUnmute(false);
-      v.play().catch(() => {});
+      setShowControls(true);
+      v.play().then(() => {
+        applyVolume(v, nextVolume);
+        setStatus("playing");
+        everRef.current = true;
+      }).catch(() => {
+        setNeedsUnmute(true);
+      });
       showFlash("play");
       return;
     }
@@ -381,7 +402,8 @@ export default function App() {
     initPlayer();
   }, [initPlayer]);
 
-  const handleClearCache = useCallback(() => { clearAllSiteData(); }, []);
+  const handleClearCache = useCallback(() => { setShowClearConfirm(true); }, []);
+  const confirmClearCache = useCallback(() => { clearAllSiteData(); }, []);
   const handleVolumeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const next = Number(event.target.value) / 100;
     const v = videoRef.current;
@@ -392,6 +414,7 @@ export default function App() {
   }, []);
 
   const isInitialLoading = status === "loading" && !everRef.current;
+  const shouldShowUnmuteOverlay = needsUnmute && status === "playing";
   const controlsVisible = showControls || status !== "playing" || isPaused || needsUnmute;
 
   return (
@@ -451,9 +474,7 @@ export default function App() {
             className="flex h-20 w-20 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm animate-play-flash"
           >
             {flashAnim === "play" ? (
-              <svg className="h-9 w-9 text-white ml-1" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3" />
-              </svg>
+              <PlayIcon />
             ) : (
               <svg className="h-9 w-9 text-white" viewBox="0 0 24 24" fill="currentColor">
                 <rect x="6" y="4" width="4" height="16" rx="1" />
@@ -464,26 +485,51 @@ export default function App() {
         </div>
       )}
 
-      {(isInitialLoading || needsUnmute) && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+      {isInitialLoading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="relative flex flex-col items-center gap-5">
-            {needsUnmute ? (
-              <button
-                onClick={handlePlayerTap}
-                aria-label="Play"
-                className="flex h-20 w-20 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm animate-play-flash"
-              >
-                <svg className="h-9 w-9 text-white ml-1" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21 5 3" />
-                </svg>
-              </button>
-            ) : (
-              <div className="relative h-16 w-16">
-                <div className="absolute inset-0 rounded-full border-[3px] border-white/10" />
-                <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-white animate-spin" />
-              </div>
-            )}
+            <div className="relative h-16 w-16">
+              <div className="absolute inset-0 rounded-full border-[3px] border-white/10" />
+              <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-white animate-spin" />
+            </div>
             <p className="text-white font-semibold text-base tracking-wide">Connecting to stream</p>
+          </div>
+        </div>
+      )}
+
+      {shouldShowUnmuteOverlay && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-md">
+          <div className="relative flex flex-col items-center gap-5">
+            <button
+              onClick={handlePlayerTap}
+              aria-label="Play"
+              className="flex h-20 w-20 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm animate-play-flash"
+            >
+              <PlayIcon />
+            </button>
+            <p className="text-white font-semibold text-base tracking-wide">Connecting to stream</p>
+          </div>
+        </div>
+      )}
+
+      {showClearConfirm && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-black/80 border border-white/15 p-5 text-center shadow-2xl">
+            <p className="text-white font-semibold text-base">Are you sure to clean cache and site data?</p>
+            <div className="mt-5 flex items-center justify-center gap-3">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="rounded-full bg-white/10 border border-white/10 px-5 py-2 text-sm font-semibold text-white transition-all duration-200 hover:bg-white/20 active:scale-95"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmClearCache}
+                className="rounded-full bg-[#f54266]/20 border border-[#f54266]/40 px-5 py-2 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#f54266]/30 active:scale-95"
+              >
+                Yes
+              </button>
+            </div>
           </div>
         </div>
       )}
