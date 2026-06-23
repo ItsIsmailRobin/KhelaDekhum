@@ -607,7 +607,7 @@ export default function App() {
               <div className="absolute inset-0 rounded-full border-[3px] border-white/10" />
               <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-white animate-spin" />
             </div>
-            <p className="text-white font-semibold text-base tracking-wide">Connecting to stream</p>
+            <p className="text-white font-semibold text-base tracking-wide">Connecting to Stream</p>
           </div>
         </div>
       )}
