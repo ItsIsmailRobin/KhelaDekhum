@@ -25,11 +25,11 @@ function applyVolume(video: HTMLVideoElement, value: number) {
   video.muted = video.volume === 0;
 }
 
-function PlayIcon({ className = "h-9 w-9 text-white ml-1" }: { className?: string }) {
+function PlayIcon({ className = "h-9 w-9 text-white" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path
-        d="M8 5.5v13c0 .9 1 1.45 1.78.96l10.13-6.5a1.14 1.14 0 0 0 0-1.92L9.78 4.54C9 4.05 8 4.6 8 5.5Z"
+        d="M8.5 5.8v12.4c0 .8.9 1.28 1.58.85l9.28-6.2a1.02 1.02 0 0 0 0-1.7l-9.28-6.2C9.4 4.52 8.5 5 8.5 5.8Z"
       />
     </svg>
   );
@@ -54,13 +54,22 @@ function PauseIcon({ className = "h-9 w-9 text-white" }: { className?: string })
   );
 }
 
-function GlassFlash({ children }: { children: React.ReactNode }) {
+function PlayerIconShell({
+  children,
+  persistent = false,
+}: {
+  children: React.ReactNode;
+  persistent?: boolean;
+}) {
   return (
-    <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-white/15 border border-white/25 shadow-2xl shadow-black/40 backdrop-blur-2xl animate-play-flash overflow-hidden">
-      <div className="absolute h-20 w-20 rounded-full bg-white/10" />
-      <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-black/20">
+    <div
+      className={`grid h-20 w-20 place-items-center rounded-full bg-black/55 backdrop-blur-sm ${
+        persistent ? "animate-unmute-pulse" : "animate-play-flash"
+      }`}
+    >
+      <span className="grid h-9 w-9 place-items-center leading-none">
         {children}
-      </div>
+      </span>
     </div>
   );
 }
@@ -174,14 +183,15 @@ export default function App() {
   const attemptPlay = useCallback(() => {
     const video = videoRef.current;
     if (!video || deadRef.current) return;
+    const soundVolume = volume > 0 ? volume : previousVolumeRef.current || 1;
     if (needsUnmute) video.muted = true;
-    else applyVolume(video, volume);
+    else applyVolume(video, soundVolume);
     if (!video.paused) { setStatus("playing"); everRef.current = true; return; }
     video
       .play()
       .then(() => {
         if (deadRef.current) return;
-        if (!needsUnmute) applyVolume(video, volume);
+        if (!needsUnmute) applyVolume(video, soundVolume);
         setStatus("playing");
         everRef.current = true;
       })
@@ -196,7 +206,9 @@ export default function App() {
               everRef.current = true;
               setNeedsUnmute(true);
             })
-            .catch(() => {});
+            .catch(() => {
+              setNeedsUnmute(true);
+            });
         }, 200);
       });
   }, [needsUnmute, volume]);
@@ -488,7 +500,7 @@ export default function App() {
   }, []);
 
   const isInitialLoading = status === "loading" && !everRef.current;
-  const shouldShowUnmuteOverlay = needsUnmute && status === "playing";
+  const shouldShowUnmuteOverlay = needsUnmute && status !== "error";
   const controlsVisible = touchDev || showControls || status !== "playing" || isPaused || needsUnmute || showClearConfirm;
 
   return (
@@ -550,9 +562,9 @@ export default function App() {
             key={flashAnim + Date.now()}
           >
             {flashAnim === "play" ? (
-              <GlassFlash><PlayIcon /></GlassFlash>
+              <PlayerIconShell><PlayIcon /></PlayerIconShell>
             ) : (
-              <GlassFlash><PauseIcon /></GlassFlash>
+              <PlayerIconShell><PauseIcon /></PlayerIconShell>
             )}
           </div>
         </div>
@@ -579,9 +591,9 @@ export default function App() {
                 unmutePlayer();
               }}
               aria-label="Unmute"
-              className="relative"
+              className="relative grid place-items-center"
             >
-              <GlassFlash><UnmuteIcon /></GlassFlash>
+              <PlayerIconShell persistent><UnmuteIcon /></PlayerIconShell>
             </button>
             <p className="text-white font-semibold text-base tracking-wide">Tap to unmute</p>
           </div>
@@ -756,7 +768,7 @@ function ControlBtn({
       }}
       onDoubleClick={(event) => event.stopPropagation()}
       {...rest}
-      className={`group flex h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/10 border border-transparent transition-all duration-200 active:scale-90 active:bg-white/25 ${
+      className={`group grid h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 place-items-center rounded-full bg-white/10 border border-transparent transition-all duration-200 active:scale-90 active:bg-white/25 ${
         isTouch ? "" : "hover:bg-white/20 hover:scale-110 hover:border-white/15"
       }`}
     >

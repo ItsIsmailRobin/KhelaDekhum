@@ -26,6 +26,14 @@ html, body, #root {
   animation: play-flash 0.65s ease-out forwards;
 }
 
+@keyframes unmute-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.06); }
+}
+.animate-unmute-pulse {
+  animation: unmute-pulse 1.35s ease-in-out infinite;
+}
+
 /* ── Suppress native media controls on iOS ── */
 video::-webkit-media-controls,
 video::-webkit-media-controls-enclosure,
@@ -36,8 +44,15 @@ video::-webkit-media-controls-panel {
 
 /* ── Prevent tap highlight & ensure touch works on controls ── */
 button, input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+button svg {
+  display: block;
+  flex-shrink: 0;
 }
 
 /* ── Ensure video fills properly in portrait mode ── */
