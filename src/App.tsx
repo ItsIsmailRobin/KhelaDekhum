@@ -1,19 +1,32 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Hls from "hls.js";
 
-const STREAM_URL = "https://no.gendigi.net/origin-proxy/chunklist.m3u8";
-const LOGO_URL =
-  "https://raw.githubusercontent.com/ItsIsmailRobin/revtvFINAL/refs/heads/main/Logo.png";
+const STREAM_TXT_URL = "/stream.txt";
+const LOGO_URL = "/logo.png";
+const VOLUME_STORAGE_KEY = "revtv-volume";
 
-// ─── Force 100% volume — always, no mute ─────────────────────────────────────
-function forceVolume(video: HTMLVideoElement) {
-  video.volume = 1;
-  video.muted  = false;
+function getSavedVolume(): number | null {
+  try {
+    const saved = localStorage.getItem(VOLUME_STORAGE_KEY);
+    if (saved === null) return null;
+    const value = Number(saved);
+    return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : null;
+  } catch {
+    return null;
+  }
 }
 
-// ─── Clear ALL site data and reload ──────────────────────────────────────────
+function saveVolume(value: number) {
+  try { localStorage.setItem(VOLUME_STORAGE_KEY, String(Math.max(0, Math.min(1, value)))); } catch {}
+}
+
+function applyVolume(video: HTMLVideoElement, value: number) {
+  video.volume = Math.max(0, Math.min(1, value));
+  video.muted = video.volume === 0;
+}
+
 async function clearAllSiteData() {
-  try { localStorage.clear(); }   catch {}
+  try { localStorage.clear(); } catch {}
   try { sessionStorage.clear(); } catch {}
   if ("caches" in window) {
     try {
@@ -31,32 +44,6 @@ async function clearAllSiteData() {
   window.location.reload();
 }
 
-// ─── Simulated live global viewer count ──────────────────────────────────────
-// Starts at a realistic base (80–230) and fluctuates naturally every ~3s
-function useGlobalViewerCount(): number {
-  const [count, setCount] = useState<number>(
-    () => Math.floor(Math.random() * 150) + 80
-  );
-
-  useEffect(() => {
-    let timer: number;
-    const schedule = () => {
-      timer = window.setTimeout(() => {
-        setCount((prev) => {
-          const delta = Math.floor(Math.random() * 13) - 6; // –6 to +6
-          return Math.max(50, Math.min(800, prev + delta));
-        });
-        schedule();
-      }, 2500 + Math.random() * 2000); // 2.5 – 4.5 s
-    };
-    schedule();
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  return count;
-}
-
-// ─── Platform helpers ─────────────────────────────────────────────────────────
 function isIOS(): boolean {
   return (
     /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -67,32 +54,32 @@ function isTouch(): boolean {
   return "ontouchstart" in window || navigator.maxTouchPoints > 0;
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
 export default function App() {
-  const videoRef     = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const hlsRef       = useRef<Hls | null>(null);
-  const retryRef     = useRef<number | null>(null);
-  const hideRef      = useRef<number | null>(null);
-  const deadRef      = useRef(false);
-  const everRef      = useRef(false);
-  const restartCnt   = useRef(0);
-  const isPausedRef  = useRef(false);
+  const hlsRef = useRef<Hls | null>(null);
+  const retryRef = useRef<number | null>(null);
+  const hideRef = useRef<number | null>(null);
+  const deadRef = useRef(false);
+  const everRef = useRef(false);
+  const restartCnt = useRef(0);
+  const isPausedRef = useRef(false);
 
-  const [status,       setStatus]       = useState<"loading" | "playing" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "playing" | "error">("loading");
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isPaused,     setIsPaused]     = useState(false);
-  const [flashAnim,    setFlashAnim]    = useState<"play" | "pause" | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [flashAnim, setFlashAnim] = useState<"play" | "pause" | null>(null);
+  const [volume, setVolume] = useState(() => getSavedVolume() ?? 1);
+  const [streamUrl, setStreamUrl] = useState("");
+  const [needsUnmute, setNeedsUnmute] = useState(() => getSavedVolume() === null);
 
   const iosDevice = isIOS();
-  const touchDev  = isTouch();
-  const viewers   = useGlobalViewerCount();
+  const touchDev = isTouch();
 
-  // ── Snap to live edge ────────────────────────────────────────────────────
   const snapToLive = useCallback(() => {
     const video = videoRef.current;
-    const hls   = hlsRef.current;
+    const hls = hlsRef.current;
     if (!video) return;
     if (hls) {
       try {
@@ -105,68 +92,56 @@ export default function App() {
     }
   }, []);
 
-  // ── VOLUME LOCK: unlock on every user touch/click ────────────────────────
   useEffect(() => {
-    const unlock = () => {
-      const v = videoRef.current;
-      if (v) { try { v.muted = false; v.volume = 1; } catch {} }
-    };
-    // Fire on every interaction — not just once — so nothing can steal volume
-    document.addEventListener("click",      unlock);
-    document.addEventListener("touchstart", unlock, { passive: true });
-    return () => {
-      document.removeEventListener("click",      unlock);
-      document.removeEventListener("touchstart", unlock);
-    };
+    let cancelled = false;
+    fetch(STREAM_TXT_URL, { cache: "no-store" })
+      .then((res) => res.text())
+      .then((text) => {
+        if (cancelled) return;
+        const nextUrl = text.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+        if (nextUrl) setStreamUrl(nextUrl);
+        else setStatus("error");
+      })
+      .catch(() => { if (!cancelled) setStatus("error"); });
+    return () => { cancelled = true; };
   }, []);
 
-  // ── VOLUME LOCK: periodic enforcement every 800ms ────────────────────────
   useEffect(() => {
-    const t = setInterval(() => {
-      const v = videoRef.current;
-      if (v && (v.muted || v.volume < 1) && !isPausedRef.current) {
-        try { v.muted = false; v.volume = 1; } catch {}
-      }
-    }, 800);
-    return () => clearInterval(t);
-  }, []);
+    const video = videoRef.current;
+    if (!video || needsUnmute) return;
+    try { applyVolume(video, volume); } catch {}
+  }, [volume, needsUnmute]);
 
-  // ── Play with forced volume ──────────────────────────────────────────────
   const attemptPlay = useCallback(() => {
     const video = videoRef.current;
     if (!video || deadRef.current) return;
-    forceVolume(video);
+    if (needsUnmute) video.muted = true;
+    else applyVolume(video, volume);
     if (!video.paused) { setStatus("playing"); everRef.current = true; return; }
     video
       .play()
       .then(() => {
         if (deadRef.current) return;
-        forceVolume(video);
+        if (!needsUnmute) applyVolume(video, volume);
         setStatus("playing");
         everRef.current = true;
       })
       .catch(() => {
-        // Autoplay blocked — mute to get play, then unmute immediately
         setTimeout(() => {
           if (deadRef.current || !videoRef.current) return;
           const v = videoRef.current;
           v.muted = true;
-          v
-            .play()
+          v.play()
             .then(() => {
-              // Unmute as fast as possible after play starts
-              setTimeout(() => {
-                try { v.muted = false; v.volume = 1; } catch {}
-              }, 150);
               setStatus("playing");
               everRef.current = true;
+              setNeedsUnmute(true);
             })
             .catch(() => {});
         }, 200);
       });
-  }, []);
+  }, [needsUnmute, volume]);
 
-  // ── HLS engine ──────────────────────────────────────────────────────────
   const fullRestart = useCallback(() => {
     if (deadRef.current) return;
     if (restartCnt.current >= 20) { setStatus("error"); return; }
@@ -179,42 +154,42 @@ export default function App() {
 
   const cleanup = useCallback(() => {
     if (retryRef.current) { window.clearTimeout(retryRef.current); retryRef.current = null; }
-    if (hlsRef.current)   { try { hlsRef.current.destroy(); } catch {} hlsRef.current = null; }
+    if (hlsRef.current) { try { hlsRef.current.destroy(); } catch {} hlsRef.current = null; }
   }, []);
 
   const initHlsEngine = useCallback(() => {
     const video = videoRef.current;
-    if (!video || deadRef.current) return;
+    if (!video || deadRef.current || !streamUrl) return;
     if (!Hls.isSupported()) { setStatus("error"); return; }
 
     const hls = new Hls({
-      enableWorker:               true,
-      lowLatencyMode:             true,
-      backBufferLength:           6,
-      maxBufferLength:            6,
-      maxMaxBufferLength:         10,
-      liveSyncDurationCount:      2,
-      liveMaxLatencyDurationCount:4,
-      highBufferWatchdogPeriod:   1,
-      nudgeMaxRetry:              5,
-      manifestLoadingTimeOut:     12000,
-      manifestLoadingMaxRetry:    999,
-      manifestLoadingRetryDelay:  500,
-      levelLoadingTimeOut:        12000,
-      levelLoadingMaxRetry:       999,
-      levelLoadingRetryDelay:     500,
-      fragLoadingTimeOut:         15000,
-      fragLoadingMaxRetry:        999,
-      fragLoadingRetryDelay:      500,
+      enableWorker: true,
+      lowLatencyMode: true,
+      backBufferLength: 6,
+      maxBufferLength: 6,
+      maxMaxBufferLength: 10,
+      liveSyncDurationCount: 2,
+      liveMaxLatencyDurationCount: 4,
+      highBufferWatchdogPeriod: 1,
+      nudgeMaxRetry: 5,
+      manifestLoadingTimeOut: 12000,
+      manifestLoadingMaxRetry: 999,
+      manifestLoadingRetryDelay: 500,
+      levelLoadingTimeOut: 12000,
+      levelLoadingMaxRetry: 999,
+      levelLoadingRetryDelay: 500,
+      fragLoadingTimeOut: 15000,
+      fragLoadingMaxRetry: 999,
+      fragLoadingRetryDelay: 500,
       xhrSetup: (xhr) => { try { xhr.withCredentials = false; } catch {} },
     });
 
-    hls.loadSource(STREAM_URL);
+    hls.loadSource(streamUrl);
     hls.attachMedia(video);
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => { snapToLive(); attemptPlay(); });
-    hls.on(Hls.Events.LEVEL_LOADED,    () => { if (video.paused && !isPausedRef.current) attemptPlay(); });
-    hls.on(Hls.Events.FRAG_BUFFERED,   () => { if (video.paused && !isPausedRef.current) attemptPlay(); });
+    hls.on(Hls.Events.LEVEL_LOADED, () => { if (video.paused && !isPausedRef.current) attemptPlay(); });
+    hls.on(Hls.Events.FRAG_BUFFERED, () => { if (video.paused && !isPausedRef.current) attemptPlay(); });
 
     hls.on(Hls.Events.FRAG_CHANGED, () => {
       if (isPausedRef.current) return;
@@ -237,43 +212,39 @@ export default function App() {
     });
 
     hlsRef.current = hls;
-  }, [attemptPlay, snapToLive, fullRestart]);
+  }, [attemptPlay, snapToLive, fullRestart, streamUrl]);
 
   const initPlayer = useCallback(() => {
     if (deadRef.current) return;
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !streamUrl) return;
     if (!everRef.current) setStatus("loading");
     cleanup();
 
-    // Directly set DOM properties — React's muted={false} prop is unreliable
-    video.volume = 1;
-    video.muted  = false;
+    if (needsUnmute) video.muted = true;
+    else applyVolume(video, volume);
 
     const nativeHls = !!video.canPlayType("application/vnd.apple.mpegurl");
     if (nativeHls) {
-      video.src = STREAM_URL;
-      forceVolume(video);
-      const onMeta   = () => { cleanup2(); snapToLive(); attemptPlay(); };
-      const onErr    = () => { cleanup2(); initHlsEngine(); };
+      video.src = streamUrl;
+      const onMeta = () => { cleanup2(); snapToLive(); attemptPlay(); };
+      const onErr = () => { cleanup2(); initHlsEngine(); };
       const cleanup2 = () => {
         video.removeEventListener("loadedmetadata", onMeta);
-        video.removeEventListener("error",          onErr);
+        video.removeEventListener("error", onErr);
       };
       video.addEventListener("loadedmetadata", onMeta);
-      video.addEventListener("error",          onErr);
+      video.addEventListener("error", onErr);
       return;
     }
     initHlsEngine();
-  }, [cleanup, attemptPlay, snapToLive, initHlsEngine]);
+  }, [cleanup, attemptPlay, snapToLive, initHlsEngine, streamUrl, needsUnmute, volume]);
 
-  // ── Mount ────────────────────────────────────────────────────────────────
   useEffect(() => {
     deadRef.current = false;
-    // Immediately set volume on DOM before anything else
     if (videoRef.current) {
-      videoRef.current.volume = 1;
-      videoRef.current.muted  = false;
+      if (needsUnmute) videoRef.current.muted = true;
+      else applyVolume(videoRef.current, volume);
     }
     initPlayer();
 
@@ -283,43 +254,45 @@ export default function App() {
         (document as any).webkitFullscreenElement;
       setIsFullscreen(!!fs);
     };
-    document.addEventListener("fullscreenchange",       onFsChange);
+    document.addEventListener("fullscreenchange", onFsChange);
     document.addEventListener("webkitfullscreenchange", onFsChange);
 
     return () => {
       deadRef.current = true;
-      document.removeEventListener("fullscreenchange",       onFsChange);
+      document.removeEventListener("fullscreenchange", onFsChange);
       document.removeEventListener("webkitfullscreenchange", onFsChange);
       cleanup();
       if (hideRef.current) window.clearTimeout(hideRef.current);
     };
-  }, []); // eslint-disable-line
+  }, [streamUrl]); // eslint-disable-line
 
-  // ── Video events ─────────────────────────────────────────────────────────
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const onPlaying   = () => { setStatus("playing"); setIsPaused(false); isPausedRef.current = false; everRef.current = true; };
-    const onPause     = () => { setIsPaused(true); isPausedRef.current = true; };
-    const onCanPlay   = () => { if (video.paused && !isPausedRef.current) attemptPlay(); };
-    // Force 100% volume any time something tries to change it
-    const onVolChange = () => { if (!isPausedRef.current) forceVolume(video); };
+    const onPlaying = () => { setStatus("playing"); setIsPaused(false); isPausedRef.current = false; everRef.current = true; };
+    const onPause = () => { setIsPaused(true); isPausedRef.current = true; };
+    const onCanPlay = () => { if (video.paused && !isPausedRef.current) attemptPlay(); };
+    const onVolChange = () => {
+      if (needsUnmute) return;
+      const nextVolume = video.muted ? 0 : video.volume;
+      setVolume(nextVolume);
+      saveVolume(nextVolume);
+    };
 
-    video.addEventListener("playing",      onPlaying);
-    video.addEventListener("pause",        onPause);
-    video.addEventListener("canplay",      onCanPlay);
+    video.addEventListener("playing", onPlaying);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("canplay", onCanPlay);
     video.addEventListener("volumechange", onVolChange);
 
     return () => {
-      video.removeEventListener("playing",      onPlaying);
-      video.removeEventListener("pause",        onPause);
-      video.removeEventListener("canplay",      onCanPlay);
+      video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("canplay", onCanPlay);
       video.removeEventListener("volumechange", onVolChange);
     };
-  }, [attemptPlay]);
+  }, [attemptPlay, needsUnmute]);
 
-  // ── Auto-hide controls ───────────────────────────────────────────────────
   useEffect(() => {
     const show = () => {
       setShowControls(true);
@@ -330,19 +303,18 @@ export default function App() {
         }, 3000);
       }
     };
-    window.addEventListener("mousemove",  show);
+    window.addEventListener("mousemove", show);
     window.addEventListener("touchstart", show, { passive: true });
     show();
     return () => {
-      window.removeEventListener("mousemove",  show);
+      window.removeEventListener("mousemove", show);
       window.removeEventListener("touchstart", show);
       if (hideRef.current) window.clearTimeout(hideRef.current);
     };
   }, [status]);
 
-  // ── Fullscreen ───────────────────────────────────────────────────────────
   const toggleFullscreen = useCallback(async () => {
-    const el    = containerRef.current;
+    const el = containerRef.current;
     const video = videoRef.current;
     if (!el) return;
     const isFs = !!(
@@ -354,17 +326,16 @@ export default function App() {
           (video as any).webkitEnterFullscreen();
           return;
         }
-        if      (el.requestFullscreen)                await el.requestFullscreen();
-        else if ((el as any).webkitRequestFullscreen)  (el as any).webkitRequestFullscreen();
+        if (el.requestFullscreen) await el.requestFullscreen();
+        else if ((el as any).webkitRequestFullscreen) (el as any).webkitRequestFullscreen();
       } else {
-        if      (document.exitFullscreen)               await document.exitFullscreen();
+        if (document.exitFullscreen) await document.exitFullscreen();
         else if ((document as any).webkitExitFullscreen) (document as any).webkitExitFullscreen();
       }
     } catch {}
   }, [iosDevice]);
 
-  // ── Play/Pause flash ─────────────────────────────────────────────────────
-  const flashRef  = useRef<number | null>(null);
+  const flashRef = useRef<number | null>(null);
   const showFlash = useCallback((type: "play" | "pause") => {
     setFlashAnim(type);
     if (flashRef.current) window.clearTimeout(flashRef.current);
@@ -375,9 +346,19 @@ export default function App() {
     const v = videoRef.current;
     if (!v) return;
     if (touchDev && !showControls) { setShowControls(true); return; }
+    if (needsUnmute) {
+      const nextVolume = volume || 1;
+      applyVolume(v, nextVolume);
+      saveVolume(nextVolume);
+      setVolume(nextVolume);
+      setNeedsUnmute(false);
+      v.play().catch(() => {});
+      showFlash("play");
+      return;
+    }
     if (v.paused) {
       snapToLive();
-      forceVolume(v);
+      applyVolume(v, volume);
       v.play().catch(() => {});
       showFlash("play");
       setIsPaused(false);
@@ -390,20 +371,28 @@ export default function App() {
       setShowControls(true);
       if (hideRef.current) window.clearTimeout(hideRef.current);
     }
-  }, [touchDev, showControls, snapToLive, showFlash]);
+  }, [touchDev, showControls, needsUnmute, volume, snapToLive, showFlash]);
 
   const manualRestart = useCallback(() => {
-    restartCnt.current  = 0;
-    everRef.current     = false;
+    restartCnt.current = 0;
+    everRef.current = false;
     isPausedRef.current = false;
     setIsPaused(false);
     initPlayer();
   }, [initPlayer]);
 
   const handleClearCache = useCallback(() => { clearAllSiteData(); }, []);
+  const handleVolumeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = Number(event.target.value) / 100;
+    const v = videoRef.current;
+    setVolume(next);
+    saveVolume(next);
+    setNeedsUnmute(false);
+    if (v) applyVolume(v, next);
+  }, []);
 
   const isInitialLoading = status === "loading" && !everRef.current;
-  const controlsVisible  = showControls || status !== "playing" || isPaused;
+  const controlsVisible = showControls || status !== "playing" || isPaused || needsUnmute;
 
   return (
     <div
@@ -411,23 +400,21 @@ export default function App() {
       className="relative h-screen w-screen bg-black overflow-hidden select-none"
       onDoubleClick={toggleFullscreen}
     >
-      {/* Background glow */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-br from-black via-zinc-950 to-black" />
         <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-fuchsia-600/6 blur-3xl" />
         <div className="absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-indigo-600/6 blur-3xl" />
       </div>
 
-      {/* ── Header ── */}
       <div
         className={`absolute top-0 left-0 right-0 z-20 flex items-center justify-between transition-opacity duration-500 ${
           controlsVisible ? "opacity-100" : "opacity-0"
         }`}
         style={{
           pointerEvents: controlsVisible ? "auto" : "none",
-          paddingTop:    "max(12px, env(safe-area-inset-top))",
-          paddingLeft:   "max(12px, env(safe-area-inset-left))",
-          paddingRight:  "max(16px, env(safe-area-inset-right))",
+          paddingTop: "max(12px, env(safe-area-inset-top))",
+          paddingLeft: "max(12px, env(safe-area-inset-left))",
+          paddingRight: "max(16px, env(safe-area-inset-right))",
           paddingBottom: "8px",
         }}
       >
@@ -443,10 +430,9 @@ export default function App() {
             className="h-10 sm:h-12 md:h-14 w-auto max-w-[140px] sm:max-w-[180px] object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.04] group-active:scale-95"
           />
         </button>
-        <StatusBadge status={status} viewers={viewers} />
+        <StatusBadge status={status} />
       </div>
 
-      {/* ── Video ── (no muted prop — we set it via ref) */}
       <video
         ref={videoRef}
         className="absolute inset-0 h-full w-full object-contain bg-black"
@@ -458,7 +444,6 @@ export default function App() {
         onWebkitEndFullscreen={() => setIsFullscreen(false)}
       />
 
-      {/* ── Play/Pause flash ── */}
       {flashAnim && (
         <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
           <div
@@ -479,27 +464,30 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Initial loading ── */}
-      {isInitialLoading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-5">
-            <div className="relative h-16 w-16">
-              <div className="absolute inset-0 rounded-full border-[3px] border-white/10" />
-              <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-white animate-spin" />
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <p className="text-white font-semibold text-base tracking-wide">Connecting to stream</p>
-              <div className="flex gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce [animation-delay:0ms]" />
-                <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce [animation-delay:150ms]" />
-                <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce [animation-delay:300ms]" />
+      {(isInitialLoading || needsUnmute) && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="relative flex flex-col items-center gap-5">
+            {needsUnmute ? (
+              <button
+                onClick={handlePlayerTap}
+                aria-label="Play"
+                className="flex h-20 w-20 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm animate-play-flash"
+              >
+                <svg className="h-9 w-9 text-white ml-1" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+              </button>
+            ) : (
+              <div className="relative h-16 w-16">
+                <div className="absolute inset-0 rounded-full border-[3px] border-white/10" />
+                <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-white animate-spin" />
               </div>
-            </div>
+            )}
+            <p className="text-white font-semibold text-base tracking-wide">Connecting to stream</p>
           </div>
         </div>
       )}
 
-      {/* ── Error ── */}
       {status === "error" && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/85 backdrop-blur-sm">
           <div className="text-center space-y-4 max-w-sm px-6">
@@ -525,35 +513,28 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Bottom controls ── */}
       <div
         className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 ${
           controlsVisible ? "opacity-100" : "opacity-0"
         }`}
         style={{
-          pointerEvents:  controlsVisible ? "auto" : "none",
-          paddingBottom:  "max(10px, env(safe-area-inset-bottom))",
-          paddingLeft:    "max(10px, env(safe-area-inset-left))",
-          paddingRight:   "max(10px, env(safe-area-inset-right))",
-          paddingTop:     "6px",
+          pointerEvents: controlsVisible ? "auto" : "none",
+          paddingBottom: "max(10px, env(safe-area-inset-bottom))",
+          paddingLeft: "max(10px, env(safe-area-inset-left))",
+          paddingRight: "max(10px, env(safe-area-inset-right))",
+          paddingTop: "6px",
         }}
       >
-        {/* Gradient fade */}
         <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
 
         <div className="relative flex items-center justify-between gap-2 rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 px-2 sm:px-3 py-2">
-
-          {/* ── Left group ── */}
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 overflow-hidden">
-
-            {/* Reload */}
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             <ControlBtn onClick={manualRestart} aria-label="Reload" title="Reload stream" isTouch={touchDev}>
               <svg className="h-4 w-4 sm:h-5 sm:w-5 text-white transition-transform duration-500 group-hover:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
               </svg>
             </ControlBtn>
 
-            {/* Volume — always 100%, decorative static icon */}
             <div className="flex h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/10">
               <svg className="h-4 w-4 sm:h-5 sm:w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
@@ -561,39 +542,38 @@ export default function App() {
               </svg>
             </div>
 
-            {/* Volume bar — desktop only */}
-            <div className="hidden md:flex items-center flex-shrink-0">
-              <div className="h-1 w-24 lg:w-28 rounded-full bg-white" />
+            <div className="flex items-center flex-shrink min-w-[54px] w-16 sm:w-24 lg:w-28">
+              <input
+                aria-label="Volume"
+                type="range"
+                min="0"
+                max="100"
+                value={Math.round(volume * 100)}
+                onChange={handleVolumeChange}
+                className="h-1 w-full appearance-none rounded-full bg-white/25 accent-white"
+                style={{
+                  background: `linear-gradient(to right, white 0%, white ${Math.round(volume * 100)}%, rgba(255,255,255,.25) ${Math.round(volume * 100)}%, rgba(255,255,255,.25) 100%)`,
+                }}
+              />
             </div>
 
-            {/* LIVE badge */}
             <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0 ml-0.5">
               <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
               <span className="text-white text-xs sm:text-sm font-bold tracking-widest">LIVE</span>
             </div>
-
-            {/* Viewer count */}
-            <div className="flex items-center gap-1 sm:gap-1.5 rounded-full bg-white/10 px-2 py-1 text-xs font-semibold text-white/90 flex-shrink-0">
-              <svg className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-white/80 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-              <span className="tabular-nums">{viewers.toLocaleString()}</span>
-            </div>
           </div>
 
-          {/* ── Right group: Clear Cache + Fullscreen ── */}
           <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-
-            {/* ♻ Clear cache — accent color #f54266, same style as fullscreen */}
             <ControlBtn onClick={handleClearCache} aria-label="Clear cache & reload" title="Clear cache & reload" isTouch={touchDev}>
               <svg className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24" fill="none" stroke="#f54266" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74" />
-                <polyline points="3 3 3 9 9 9" />
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14H6L5 6" />
+                <path d="M10 11v6" />
+                <path d="M14 11v6" />
+                <path d="M8 6l1-3h6l1 3" />
               </svg>
             </ControlBtn>
 
-            {/* Fullscreen */}
             <ControlBtn
               onClick={toggleFullscreen}
               aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
@@ -623,7 +603,6 @@ export default function App() {
   );
 }
 
-// ── ControlBtn ────────────────────────────────────────────────────────────────
 function ControlBtn({
   onClick, children, isTouch, ...rest
 }: {
@@ -646,12 +625,11 @@ function ControlBtn({
   );
 }
 
-// ── StatusBadge ───────────────────────────────────────────────────────────────
-function StatusBadge({ status, viewers }: { status: string; viewers: number }) {
+function StatusBadge({ status }: { status: string }) {
   const cfg: Record<string, { label: string; dot: string; bg: string; text: string }> = {
     loading: { label: "Connecting", dot: "bg-amber-400 animate-pulse", bg: "bg-amber-500/10 border-amber-500/20", text: "text-amber-300" },
-    playing: { label: "Live",       dot: "bg-red-500 animate-pulse",   bg: "bg-red-500/10 border-red-500/25",     text: "text-red-300"   },
-    error:   { label: "Offline",    dot: "bg-zinc-500",                 bg: "bg-zinc-500/10 border-zinc-500/20",   text: "text-zinc-300"  },
+    playing: { label: "Live", dot: "bg-red-500 animate-pulse", bg: "bg-red-500/10 border-red-500/25", text: "text-red-300" },
+    error: { label: "Offline", dot: "bg-zinc-500", bg: "bg-zinc-500/10 border-zinc-500/20", text: "text-zinc-300" },
   };
   const s = cfg[status] ?? cfg.loading;
   return (
@@ -660,7 +638,6 @@ function StatusBadge({ status, viewers }: { status: string; viewers: number }) {
     >
       <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
       <span>{s.label}</span>
-      <span className="opacity-60 tabular-nums">· {viewers.toLocaleString()}</span>
     </div>
   );
 }
