@@ -43,11 +43,20 @@ video::-webkit-media-controls-panel {
 }
 
 /* ── Prevent tap highlight & ensure touch works on controls ── */
-button, input[type="range"] {
+button, input[type="range"], select {
   appearance: none;
   -webkit-appearance: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+select {
+  background-image: none;
+}
+
+select option {
+  background: #111;
+  color: #fff;
 }
 
 button svg {
