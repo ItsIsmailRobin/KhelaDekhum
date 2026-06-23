@@ -27,12 +27,9 @@ function applyVolume(video: HTMLVideoElement, value: number) {
 
 function PlayIcon({ className = "h-9 w-9 text-white ml-1" }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 512 512" fill="none" aria-hidden="true">
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path
-        d="M180 151.8v208.4c0 24.2 26.8 38.8 47.1 25.7l161.5-104.2c18.6-12 18.6-39.4 0-51.4L227.1 126.1C206.8 113 180 127.6 180 151.8Z"
-        stroke="currentColor"
-        strokeWidth="38"
-        strokeLinejoin="round"
+        d="M8 5.5v13c0 .9 1 1.45 1.78.96l10.13-6.5a1.14 1.14 0 0 0 0-1.92L9.78 4.54C9 4.05 8 4.6 8 5.5Z"
       />
     </svg>
   );
@@ -45,6 +42,26 @@ function UnmuteIcon({ className = "h-9 w-9 text-white" }: { className?: string }
       <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
       <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
     </svg>
+  );
+}
+
+function PauseIcon({ className = "h-9 w-9 text-white" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <rect x="7" y="5" width="3.5" height="14" rx="1.2" />
+      <rect x="13.5" y="5" width="3.5" height="14" rx="1.2" />
+    </svg>
+  );
+}
+
+function GlassFlash({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-white/15 border border-white/25 shadow-2xl shadow-black/40 backdrop-blur-2xl animate-play-flash overflow-hidden">
+      <div className="absolute h-20 w-20 rounded-full bg-white/10" />
+      <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-black/20">
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -113,7 +130,7 @@ export default function App() {
   const [flashAnim, setFlashAnim] = useState<"play" | "pause" | null>(null);
   const [volume, setVolume] = useState(() => getSavedVolume() ?? 1);
   const [streamUrl, setStreamUrl] = useState("");
-  const [needsUnmute, setNeedsUnmute] = useState(() => getSavedVolume() === null);
+  const [needsUnmute, setNeedsUnmute] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const iosDevice = isIOS();
@@ -411,6 +428,7 @@ export default function App() {
   const handlePlayerTap = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
+    if (showClearConfirm) return;
     if (needsUnmute) {
       unmutePlayer();
       return;
@@ -430,7 +448,7 @@ export default function App() {
       setShowControls(true);
       if (hideRef.current) window.clearTimeout(hideRef.current);
     }
-  }, [needsUnmute, volume, snapToLive, showFlash, unmutePlayer]);
+  }, [needsUnmute, volume, snapToLive, showFlash, unmutePlayer, showClearConfirm]);
 
   const manualRestart = useCallback(() => {
     restartCnt.current = 0;
@@ -471,7 +489,7 @@ export default function App() {
 
   const isInitialLoading = status === "loading" && !everRef.current;
   const shouldShowUnmuteOverlay = needsUnmute && status === "playing";
-  const controlsVisible = touchDev || showControls || status !== "playing" || isPaused || needsUnmute;
+  const controlsVisible = touchDev || showControls || status !== "playing" || isPaused || needsUnmute || showClearConfirm;
 
   return (
     <div
@@ -497,6 +515,8 @@ export default function App() {
           paddingRight: "max(16px, env(safe-area-inset-right))",
           paddingBottom: "8px",
         }}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
       >
         <button
           onClick={() => window.location.reload()}
@@ -528,15 +548,11 @@ export default function App() {
         <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
           <div
             key={flashAnim + Date.now()}
-            className="flex h-20 w-20 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm animate-play-flash"
           >
             {flashAnim === "play" ? (
-              <PlayIcon />
+              <GlassFlash><PlayIcon /></GlassFlash>
             ) : (
-              <svg className="h-9 w-9 text-white" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="4" width="4" height="16" rx="1" />
-                <rect x="14" y="4" width="4" height="16" rx="1" />
-              </svg>
+              <GlassFlash><PauseIcon /></GlassFlash>
             )}
           </div>
         </div>
@@ -563,9 +579,9 @@ export default function App() {
                 unmutePlayer();
               }}
               aria-label="Unmute"
-              className="flex h-20 w-20 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm animate-play-flash"
+              className="relative"
             >
-              <UnmuteIcon />
+              <GlassFlash><UnmuteIcon /></GlassFlash>
             </button>
             <p className="text-white font-semibold text-base tracking-wide">Tap to unmute</p>
           </div>
@@ -573,7 +589,11 @@ export default function App() {
       )}
 
       {showClearConfirm && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
           <div className="w-full max-w-sm rounded-2xl bg-black/80 border border-white/15 p-5 text-center shadow-2xl">
             <p className="text-white font-semibold text-base">Are you sure to clean cache and site data?</p>
             <div className="mt-5 flex items-center justify-center gap-3">
@@ -630,6 +650,8 @@ export default function App() {
           paddingRight: "max(10px, env(safe-area-inset-right))",
           paddingTop: "6px",
         }}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
       >
         <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
 
@@ -728,7 +750,11 @@ function ControlBtn({
 }) {
   return (
     <button
-      onClick={onClick}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
       {...rest}
       className={`group flex h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/10 border border-transparent transition-all duration-200 active:scale-90 active:bg-white/25 ${
         isTouch ? "" : "hover:bg-white/20 hover:scale-110 hover:border-white/15"
@@ -741,14 +767,14 @@ function ControlBtn({
 
 function StatusBadge({ status }: { status: string }) {
   const cfg: Record<string, { label: string; dot: string; bg: string; text: string }> = {
-    loading: { label: "Connecting", dot: "bg-amber-400 animate-pulse", bg: "bg-amber-500/10 border-amber-500/20", text: "text-amber-300" },
-    playing: { label: "Live", dot: "bg-red-500 animate-pulse", bg: "bg-red-500/10 border-red-500/25", text: "text-red-300" },
-    error: { label: "Offline", dot: "bg-zinc-500", bg: "bg-zinc-500/10 border-zinc-500/20", text: "text-zinc-300" },
+    loading: { label: "Connecting", dot: "bg-amber-300 animate-pulse", bg: "bg-black/35 border-white/10", text: "text-white/85" },
+    playing: { label: "Live", dot: "bg-red-500 animate-pulse", bg: "bg-black/35 border-white/10", text: "text-white" },
+    error: { label: "Offline", dot: "bg-zinc-500", bg: "bg-black/35 border-white/10", text: "text-white/80" },
   };
   const s = cfg[status] ?? cfg.loading;
   return (
     <div
-      className={`flex items-center gap-2 rounded-full border backdrop-blur-md px-3 py-1.5 text-xs font-semibold transition-all duration-500 ${s.bg} ${s.text}`}
+      className={`flex items-center gap-2 rounded-full border backdrop-blur-xl px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-500 shadow-lg shadow-black/20 ${s.bg} ${s.text}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
       <span>{s.label}</span>
