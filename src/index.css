@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+/* ── Play/Pause flash animation (YouTube-style) ── */
+@keyframes play-flash {
+  0%   { opacity: 0; transform: scale(0.6); }
+  25%  { opacity: 1; transform: scale(1.05); }
+  60%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.1); }
+}
+.animate-play-flash {
+  animation: play-flash 0.65s ease-out forwards;
+}
+
+/* ── Volume slider ── */
+.volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+}
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: 0;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.volume-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.5);
+}
+.volume-slider:active::-webkit-slider-thumb {
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.6);
+}
+.volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: 0;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.volume-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.5);
+}
+.volume-slider::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
+/* ── iOS fullscreen: ensure video fills properly ── */
+video::-webkit-media-controls {
+  display: none !important;
+}
+video::-webkit-media-controls-enclosure {
+  display: none !important;
+}
+
+/* ── Prevent text selection on controls ── */
+button, input[type="range"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
