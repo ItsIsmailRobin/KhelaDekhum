@@ -40,47 +40,9 @@ button, input[type="range"] {
   touch-action: manipulation;
 }
 
-/* ── Ensure video fills properly ── */
+/* ── Ensure video fills properly in portrait mode ── */
 video {
   object-fit: contain;
   width: 100%;
   height: 100%;
-}
-
-/* ── Custom volume slider ── */
-input[type="range"].volume-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 4px;
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  background: linear-gradient(to right, #ffffff var(--vol, 100%), rgba(255,255,255,0.3) var(--vol, 100%));
-}
-input[type="range"].volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #ffffff;
-  cursor: pointer;
-  box-shadow: 0 0 3px rgba(0,0,0,0.5);
-}
-input[type="range"].volume-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #ffffff;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 0 3px rgba(0,0,0,0.5);
-}
-
-/* ── Controls bar always above safe areas ── */
-.controls-bar {
-  padding-bottom: max(10px, env(safe-area-inset-bottom));
-  padding-left: max(8px, env(safe-area-inset-left));
-  padding-right: max(8px, env(safe-area-inset-right));
-  padding-top: 6px;
 }

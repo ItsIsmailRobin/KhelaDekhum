@@ -10,9 +10,12 @@
   },
   "dependencies": {
     "clsx": "2.1.1",
+    "express": "^5.2.1",
     "hls.js": "^1.6.16",
+    "node-fetch": "^3.3.2",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "shaka-player": "^5.1.10",
     "tailwind-merge": "3.4.0"
   },
   "devDependencies": {
