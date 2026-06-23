@@ -4,13 +4,6 @@ import Hls from "hls.js";
 const STREAM_TXT_URL = "/stream.txt";
 const LOGO_URL = "/logo.png";
 const VOLUME_STORAGE_KEY = "revtv-volume";
-const QUALITY_STORAGE_KEY = "revtv-quality";
-
-type QualityChoice = "auto" | `${number}`;
-type QualityOption = {
-  value: QualityChoice;
-  label: string;
-};
 
 function getSavedVolume(): number | null {
   try {
@@ -27,28 +20,9 @@ function saveVolume(value: number) {
   try { localStorage.setItem(VOLUME_STORAGE_KEY, String(Math.max(0, Math.min(1, value)))); } catch {}
 }
 
-function getSavedQuality(): QualityChoice {
-  try {
-    const saved = localStorage.getItem(QUALITY_STORAGE_KEY);
-    if (saved === "auto") return "auto";
-    if (saved !== null && Number.isInteger(Number(saved))) return saved as QualityChoice;
-  } catch {}
-  return "auto";
-}
-
-function saveQuality(value: QualityChoice) {
-  try { localStorage.setItem(QUALITY_STORAGE_KEY, value); } catch {}
-}
-
 function applyVolume(video: HTMLVideoElement, value: number) {
   video.volume = Math.max(0, Math.min(1, value));
   video.muted = video.volume === 0;
-}
-
-function formatQualityLabel(level: { height?: number; bitrate?: number }, index: number) {
-  if (level.height) return `${level.height}p`;
-  if (level.bitrate) return `${Math.round(level.bitrate / 1000)}k`;
-  return `Q${index + 1}`;
 }
 
 function getBufferedAhead(video: HTMLVideoElement) {
@@ -176,8 +150,6 @@ export default function App() {
   const [streamUrl, setStreamUrl] = useState("");
   const [needsUnmute, setNeedsUnmute] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [quality, setQuality] = useState<QualityChoice>(() => getSavedQuality());
-  const [qualityOptions, setQualityOptions] = useState<QualityOption[]>([{ value: "auto", label: "Auto" }]);
 
   const iosDevice = isIOS();
   const touchDev = isTouch();
@@ -265,22 +237,6 @@ export default function App() {
     if (hlsRef.current) { try { hlsRef.current.destroy(); } catch {} hlsRef.current = null; }
   }, []);
 
-  const applyQuality = useCallback((hls: Hls, choice: QualityChoice) => {
-    if (choice === "auto") {
-      hls.currentLevel = -1;
-      hls.loadLevel = -1;
-      hls.autoLevelCapping = -1;
-      if (hls.levels.length > 0) hls.nextAutoLevel = hls.levels.length - 1;
-      return;
-    }
-    const nextLevel = Number(choice);
-    if (Number.isInteger(nextLevel) && nextLevel >= 0 && nextLevel < hls.levels.length) {
-      hls.currentLevel = nextLevel;
-      hls.loadLevel = nextLevel;
-      hls.nextLevel = nextLevel;
-    }
-  }, []);
-
   const initHlsEngine = useCallback(() => {
     const video = videoRef.current;
     if (!video || deadRef.current || !streamUrl) return;
@@ -312,18 +268,15 @@ export default function App() {
     hls.attachMedia(video);
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-      const levels = hls.levels.map((level, index) => ({
-        value: String(index) as QualityChoice,
-        label: formatQualityLabel(level, index),
-      }));
-      setQualityOptions([{ value: "auto", label: "Auto" }, ...levels]);
-      applyQuality(hls, quality);
+      hls.currentLevel = -1;
+      hls.loadLevel = -1;
+      hls.autoLevelCapping = -1;
       snapToLive();
       attemptPlay();
     });
     hls.on(Hls.Events.LEVEL_LOADED, () => { if (video.paused && !isPausedRef.current) attemptPlay(); });
     hls.on(Hls.Events.FRAG_BUFFERED, () => {
-      if (quality === "auto" && hls.levels.length > 0 && getBufferedAhead(video) >= 4) {
+      if (hls.levels.length > 0 && getBufferedAhead(video) >= 4) {
         hls.nextAutoLevel = hls.levels.length - 1;
       }
       if (video.paused && !isPausedRef.current) attemptPlay();
@@ -350,7 +303,7 @@ export default function App() {
     });
 
     hlsRef.current = hls;
-  }, [attemptPlay, snapToLive, fullRestart, streamUrl, quality, applyQuality]);
+  }, [attemptPlay, snapToLive, fullRestart, streamUrl]);
 
   const initPlayer = useCallback(() => {
     if (deadRef.current) return;
@@ -454,12 +407,6 @@ export default function App() {
     };
   }, [status]);
 
-  useEffect(() => {
-    const hls = hlsRef.current;
-    if (hls) applyQuality(hls, quality);
-    saveQuality(quality);
-  }, [quality, applyQuality]);
-
   const toggleFullscreen = useCallback(async () => {
     const el = containerRef.current;
     const video = videoRef.current;
@@ -560,8 +507,16 @@ export default function App() {
       setVolume(0);
     }
   }, [volume]);
-  const handleQualityChange = useCallback((event: React.ChangeEvent<HTMLSelectElement>) => {
-    setQuality(event.target.value as QualityChoice);
+  const handleVolumeChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const next = Number(event.target.value) / 100;
+    const v = videoRef.current;
+    setVolume(next);
+    if (next > 0) {
+      previousVolumeRef.current = next;
+      saveVolume(next);
+    }
+    setNeedsUnmute(false);
+    if (v) applyVolume(v, next);
   }, []);
 
   const isInitialLoading = status === "loading" && !everRef.current;
@@ -582,15 +537,13 @@ export default function App() {
       </div>
 
       <div
-        className={`absolute top-0 left-0 right-0 z-20 flex items-center justify-between transition-opacity duration-500 ${
-          controlsVisible ? "opacity-100" : "opacity-0"
+        className={`absolute left-0 top-0 z-20 transition-opacity duration-500 ${
+          controlsVisible ? "opacity-100" : "opacity-70"
         }`}
         style={{
-          pointerEvents: controlsVisible ? "auto" : "none",
+          pointerEvents: "auto",
           paddingTop: "max(12px, env(safe-area-inset-top))",
           paddingLeft: "max(12px, env(safe-area-inset-left))",
-          paddingRight: "max(16px, env(safe-area-inset-right))",
-          paddingBottom: "8px",
         }}
         onClick={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
@@ -607,7 +560,19 @@ export default function App() {
             className="h-10 sm:h-12 md:h-14 w-auto max-w-[140px] sm:max-w-[180px] object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.04] group-active:scale-95"
           />
         </button>
-        <StatusBadge status={status} />
+      </div>
+
+      <div
+        className="absolute right-0 top-0 z-20 transition-opacity duration-500 opacity-80"
+        style={{
+          pointerEvents: "auto",
+          paddingTop: "max(12px, env(safe-area-inset-top))",
+          paddingRight: "max(16px, env(safe-area-inset-right))",
+        }}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <StatusBadge status={status} onClick={snapToLive} />
       </div>
 
       <video
@@ -755,23 +720,24 @@ export default function App() {
               )}
             </ControlBtn>
 
+            <div className="flex items-center flex-shrink min-w-[42px] w-12 sm:w-24 lg:w-28">
+              <input
+                aria-label="Volume"
+                type="range"
+                min="0"
+                max="100"
+                value={Math.round(volume * 100)}
+                onChange={handleVolumeChange}
+                className="h-1 w-full appearance-none rounded-full bg-white/25 accent-white"
+                style={{
+                  background: `linear-gradient(to right, white 0%, white ${Math.round(volume * 100)}%, rgba(255,255,255,.25) ${Math.round(volume * 100)}%, rgba(255,255,255,.25) 100%)`,
+                }}
+              />
+            </div>
+
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-            <select
-              aria-label="Quality"
-              title="Quality"
-              value={quality}
-              onChange={handleQualityChange}
-              className="h-9 sm:h-10 max-w-[74px] rounded-full bg-white/10 border border-transparent px-2 text-xs font-semibold text-white outline-none transition-all duration-200 hover:bg-white/20 hover:border-white/15"
-            >
-              {qualityOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-
             <ControlBtn onClick={handleClearCache} aria-label="Clear cache & reload" title="Clear cache & reload" isTouch={touchDev}>
               <svg className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24" fill="none" stroke="#f54266" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6" />
@@ -837,19 +803,22 @@ function ControlBtn({
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, onClick }: { status: string; onClick: () => void }) {
   const cfg: Record<string, { label: string; dot: string; bg: string; text: string }> = {
-    loading: { label: "Connecting", dot: "bg-amber-300 animate-pulse", bg: "bg-black/10 border-white/5", text: "text-white/75" },
-    playing: { label: "Live", dot: "bg-red-500 animate-pulse", bg: "bg-black/10 border-white/5", text: "text-white/85" },
-    error: { label: "Offline", dot: "bg-zinc-500", bg: "bg-black/10 border-white/5", text: "text-white/75" },
+    loading: { label: "Connecting", dot: "bg-amber-300 animate-pulse", bg: "bg-white/[0.04] border-white/[0.07]", text: "text-white/65" },
+    playing: { label: "Live", dot: "bg-red-500 animate-pulse", bg: "bg-white/[0.04] border-white/[0.07]", text: "text-white/70" },
+    error: { label: "Offline", dot: "bg-zinc-500", bg: "bg-white/[0.04] border-white/[0.07]", text: "text-white/65" },
   };
   const s = cfg[status] ?? cfg.loading;
   return (
-    <div
-      className={`flex items-center gap-2 rounded-full border backdrop-blur-sm px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-500 ${s.bg} ${s.text}`}
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Go live"
+      className={`flex items-center gap-2 rounded-full border backdrop-blur-[2px] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-white/[0.07] active:scale-95 ${s.bg} ${s.text}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
       <span>{s.label}</span>
-    </div>
+    </button>
   );
 }
