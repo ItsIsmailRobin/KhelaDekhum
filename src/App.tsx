@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Hls from "hls.js";
 
-const STREAM_TXT_URL = "/stream.txt";
+const STREAM_TXT_URL = "https://stream-fetch-blond.vercel.app/stream.txt";
 const LOGO_URL = "/logo.png";
 const VOLUME_STORAGE_KEY = "revtv-volume";
 
