@@ -563,9 +563,11 @@ export default function App() {
       </div>
 
       <div
-        className="absolute right-0 top-0 z-20 transition-opacity duration-500 opacity-80"
+        className={`absolute right-0 top-0 z-20 transition-opacity duration-300 ${
+          controlsVisible ? "opacity-100" : "opacity-0"
+        }`}
         style={{
-          pointerEvents: "auto",
+          pointerEvents: controlsVisible ? "auto" : "none",
           paddingTop: "max(12px, env(safe-area-inset-top))",
           paddingRight: "max(16px, env(safe-area-inset-right))",
         }}
@@ -808,10 +810,10 @@ function ControlBtn({
 }
 
 function StatusBadge({ status, onClick }: { status: string; onClick: () => void }) {
-  const cfg: Record<string, { label: string; dot: string; bg: string; text: string }> = {
-    loading: { label: "Connecting", dot: "bg-amber-300 animate-pulse", bg: "bg-white/[0.04] border-white/[0.07]", text: "text-white/65" },
-    playing: { label: "Live", dot: "bg-red-500 animate-pulse", bg: "bg-white/[0.04] border-white/[0.07]", text: "text-white/70" },
-    error: { label: "Offline", dot: "bg-zinc-500", bg: "bg-white/[0.04] border-white/[0.07]", text: "text-white/65" },
+  const cfg: Record<string, { label: string; dot: string; text: string }> = {
+    loading: { label: "Connecting", dot: "bg-amber-300 animate-pulse", text: "text-white/70" },
+    playing: { label: "Live", dot: "bg-red-500 animate-pulse", text: "text-white/80" },
+    error: { label: "Offline", dot: "bg-zinc-500", text: "text-white/60" },
   };
   const s = cfg[status] ?? cfg.loading;
   return (
@@ -819,7 +821,7 @@ function StatusBadge({ status, onClick }: { status: string; onClick: () => void 
       type="button"
       onClick={onClick}
       aria-label="Go live"
-      className={`flex items-center gap-2 rounded-full border backdrop-blur-[2px] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] transition-all duration-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:bg-white/[0.07] active:scale-95 ${s.bg} ${s.text}`}
+      className={`flex items-center gap-1.5 rounded-full bg-black/35 backdrop-blur-[2px] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors duration-300 active:scale-95 ${s.text}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
       <span>{s.label}</span>
