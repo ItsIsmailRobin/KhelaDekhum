@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- Strip the Referer header on every request (the m3u8/CDN proxy is referrer-sensitive
+         and was silently blocking in-app XHR requests while a direct tab paste worked fine) -->
+    <meta name="referrer" content="no-referrer" />
     <title>RevTV</title>
 
     <!-- Favicon -->

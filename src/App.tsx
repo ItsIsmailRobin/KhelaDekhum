@@ -520,7 +520,7 @@ export default function App() {
   }, []);
 
   const isInitialLoading = status === "loading" && !everRef.current;
-  const shouldShowUnmuteOverlay = needsUnmute && status !== "error";
+  const shouldShowUnmuteOverlay = needsUnmute && status === "playing";
   const controlsVisible = touchDev || showControls || status !== "playing" || isPaused || needsUnmute || showClearConfirm;
 
   return (
@@ -581,6 +581,10 @@ export default function App() {
         playsInline
         autoPlay
         controls={false}
+        disablePictureInPicture
+        disableRemotePlayback
+        controlsList="nodownload noremoteplayback nofullscreen noplaybackrate"
+        x-webkit-airplay="deny"
         onClick={handlePlayerTap}
         onWebkitBeginFullscreen={() => setIsFullscreen(true)}
         onWebkitEndFullscreen={() => setIsFullscreen(false)}
