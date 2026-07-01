@@ -538,14 +538,14 @@ export default function App() {
   // whenever the watchdog below fires an automatic reload.
   const [autoRefreshFlash, setAutoRefreshFlash] = useState(false);
   const autoRefreshFlashTimeoutRef = useRef<number | null>(null);
-  const triggerAutoRefresh = useCallback(() => {
+  const triggerAutoRefresh = useCallback((durationMs: number = 1000) => {
     manualRestart();
     setAutoRefreshFlash(true);
     if (autoRefreshFlashTimeoutRef.current) window.clearTimeout(autoRefreshFlashTimeoutRef.current);
     autoRefreshFlashTimeoutRef.current = window.setTimeout(() => {
       setAutoRefreshFlash(false);
       autoRefreshFlashTimeoutRef.current = null;
-    }, 1000);
+    }, durationMs);
   }, [manualRestart]);
   useEffect(() => {
     return () => {
@@ -556,7 +556,7 @@ export default function App() {
   // Auto-reload: if the stream is playing (not paused by the user) but the
   // video frame is frozen (currentTime not advancing) for 5 seconds, press
   // "Reload Stream" automatically. Also covers the "Connecting to Stream"
-  // state: if it stays stuck on "loading" for 5 seconds, auto-reload too.
+  // state: if it stays stuck on "loading" for 6 seconds, auto-reload too.
   const stuckLastTimeRef = useRef(0);
   const stuckSinceRef = useRef<number | null>(null);
   const loadingSinceRef = useRef<number | null>(null);
@@ -568,15 +568,15 @@ export default function App() {
         return;
       }
 
-      // Stuck while connecting: status has been "loading" for 3s+.
+      // Stuck while connecting: status has been "loading" for 6s+.
       if (status === "loading") {
         stuckSinceRef.current = null;
         stuckLastTimeRef.current = video.currentTime;
         if (loadingSinceRef.current === null) {
           loadingSinceRef.current = Date.now();
-        } else if (Date.now() - loadingSinceRef.current >= 3000) {
+        } else if (Date.now() - loadingSinceRef.current >= 6000) {
           loadingSinceRef.current = null;
-          triggerAutoRefresh();
+          triggerAutoRefresh(6000);
         }
         return;
       }
