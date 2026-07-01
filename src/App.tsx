@@ -536,19 +536,34 @@ export default function App() {
 
   // Auto-reload: if the stream is playing (not paused by the user) but the
   // video frame is frozen (currentTime not advancing) for 5 seconds, press
-  // "Reload Stream" automatically.
+  // "Reload Stream" automatically. Also covers the "Connecting to Stream"
+  // state: if it stays stuck on "loading" for 5 seconds, auto-reload too.
   const stuckLastTimeRef = useRef(0);
   const stuckSinceRef = useRef<number | null>(null);
+  const loadingSinceRef = useRef<number | null>(null);
   useEffect(() => {
     const interval = window.setInterval(() => {
       const video = videoRef.current;
-      if (!video || deadRef.current) return;
+      if (!video || deadRef.current || document.hidden) {
+        loadingSinceRef.current = null;
+        return;
+      }
 
-      const notActive =
-        status !== "playing" ||
-        isPausedRef.current ||
-        video.paused ||
-        document.hidden;
+      // Stuck while connecting: status has been "loading" for 5s+.
+      if (status === "loading") {
+        stuckSinceRef.current = null;
+        stuckLastTimeRef.current = video.currentTime;
+        if (loadingSinceRef.current === null) {
+          loadingSinceRef.current = Date.now();
+        } else if (Date.now() - loadingSinceRef.current >= 5000) {
+          loadingSinceRef.current = null;
+          manualRestart();
+        }
+        return;
+      }
+      loadingSinceRef.current = null;
+
+      const notActive = status !== "playing" || isPausedRef.current || video.paused;
 
       if (notActive) {
         stuckSinceRef.current = null;
