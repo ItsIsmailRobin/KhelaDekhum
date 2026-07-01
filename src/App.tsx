@@ -150,7 +150,7 @@ export default function App() {
   const [streamUrl, setStreamUrl] = useState("");
   const [needsUnmute, setNeedsUnmute] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [filledMode, setFilledMode] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
 
   const iosDevice = isIOS();
   const touchDev = isTouch();
@@ -359,6 +359,28 @@ export default function App() {
   }, [streamUrl]); // eslint-disable-line
 
   useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setContainerWidth(el.getBoundingClientRect().width);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    // Belt-and-braces for Android Chrome, where fullscreen/rotation resizes
+    // don't always fire ResizeObserver promptly.
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    document.addEventListener("fullscreenchange", update);
+    document.addEventListener("webkitfullscreenchange", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      document.removeEventListener("fullscreenchange", update);
+      document.removeEventListener("webkitfullscreenchange", update);
+    };
+  }, []);
+
+  useEffect(() => {
     const removeOverlay = () => {
       document
         .querySelectorAll('#m3u8OverlayDiv, .m3u8OverlayDiv, [id="m3u8OverlayDiv"], [class*="m3u8OverlayDiv"]')
@@ -369,10 +391,6 @@ export default function App() {
     observer.observe(document.documentElement, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    if (!isFullscreen) setFilledMode(false);
-  }, [isFullscreen]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -507,6 +525,44 @@ export default function App() {
     initPlayer();
   }, [initPlayer]);
 
+  // Auto-reload: if the stream is playing (not paused by the user) but the
+  // video frame is frozen (currentTime not advancing) for 5 seconds, press
+  // "Reload Stream" automatically.
+  const stuckLastTimeRef = useRef(0);
+  const stuckSinceRef = useRef<number | null>(null);
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const video = videoRef.current;
+      if (!video || deadRef.current) return;
+
+      const notActive =
+        status !== "playing" ||
+        isPausedRef.current ||
+        video.paused ||
+        document.hidden;
+
+      if (notActive) {
+        stuckSinceRef.current = null;
+        stuckLastTimeRef.current = video.currentTime;
+        return;
+      }
+
+      const ct = video.currentTime;
+      if (ct === stuckLastTimeRef.current) {
+        if (stuckSinceRef.current === null) {
+          stuckSinceRef.current = Date.now();
+        } else if (Date.now() - stuckSinceRef.current >= 5000) {
+          stuckSinceRef.current = null;
+          manualRestart();
+        }
+      } else {
+        stuckLastTimeRef.current = ct;
+        stuckSinceRef.current = null;
+      }
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [status, manualRestart]);
+
   const handleClearCache = useCallback(() => { setShowClearConfirm(true); }, []);
   const confirmClearCache = useCallback(() => { clearAllSiteData(); }, []);
   const toggleMute = useCallback(() => {
@@ -537,7 +593,16 @@ export default function App() {
   }, []);
 
   const videoStyle: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none" };
-  const objectFitClass = filledMode ? "object-cover" : "object-contain";
+
+  // Logo sizing is derived from the container's actual measured width rather
+  // than CSS vw units — on Android, vw can go stale after entering fullscreen
+  // or rotating the screen, which made the logo render at the wrong size.
+  const logoHeight = containerWidth
+    ? Math.min(52, Math.max(26, containerWidth * 0.06))
+    : null;
+  const logoMaxWidth = containerWidth
+    ? Math.min(170, Math.max(84, containerWidth * 0.24))
+    : null;
 
   const isInitialLoading = status === "loading" && !everRef.current;
   const shouldShowUnmuteOverlay = needsUnmute && status === "playing";
@@ -585,8 +650,8 @@ export default function App() {
             draggable={false}
             className="w-auto object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.04] group-active:scale-95"
             style={{
-              height: "clamp(26px, 6vw, 52px)",
-              maxWidth: "clamp(84px, 24vw, 170px)",
+              height: logoHeight ? `${logoHeight}px` : "clamp(26px, 6vw, 52px)",
+              maxWidth: logoMaxWidth ? `${logoMaxWidth}px` : "clamp(84px, 24vw, 170px)",
             }}
           />
         </button>
@@ -609,7 +674,7 @@ export default function App() {
 
       <video
         ref={videoRef}
-        className={`bg-black ${objectFitClass}`}
+        className="bg-black object-contain"
         style={videoStyle}
         playsInline
         autoPlay
@@ -782,25 +847,6 @@ export default function App() {
                 <path d="M10 11v6" />
                 <path d="M14 11v6" />
                 <path d="M8 6l1-3h6l1 3" />
-              </svg>
-            </ControlBtn>
-
-            <ControlBtn
-              onClick={() => setFilledMode((v) => !v)}
-              aria-label={filledMode ? "Fit to screen" : "Fill screen"}
-              title={filledMode ? "Fit to screen" : "Fill screen"}
-              isTouch={touchDev}
-            >
-              <svg className="h-4 w-4 sm:h-5 sm:w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M4 8V5a1 1 0 0 1 1-1h3" />
-                <path d="M16 4h3a1 1 0 0 1 1 1v3" />
-                <path d="M20 16v3a1 1 0 0 1-1 1h-3" />
-                <path d="M8 20H5a1 1 0 0 1-1-1v-3" />
-                {filledMode ? (
-                  <rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" stroke="none" />
-                ) : (
-                  <rect x="7" y="9" width="10" height="6" rx="1" fill="currentColor" stroke="none" />
-                )}
               </svg>
             </ControlBtn>
 
