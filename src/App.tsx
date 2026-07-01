@@ -25,15 +25,6 @@ function applyVolume(video: HTMLVideoElement, value: number) {
   video.muted = video.volume === 0;
 }
 
-function getBufferedAhead(video: HTMLVideoElement) {
-  for (let i = 0; i < video.buffered.length; i++) {
-    if (video.currentTime >= video.buffered.start(i) && video.currentTime <= video.buffered.end(i)) {
-      return video.buffered.end(i) - video.currentTime;
-    }
-  }
-  return 0;
-}
-
 function PlayIcon({ className = "h-9 w-9 text-white" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -140,6 +131,7 @@ export default function App() {
   const everRef = useRef(false);
   const restartCnt = useRef(0);
   const isPausedRef = useRef(false);
+  const bandwidthEstimateRef = useRef<number | null>(null);
 
   const [status, setStatus] = useState<"loading" | "playing" | "error">("loading");
   const [showControls, setShowControls] = useState(true);
@@ -245,13 +237,16 @@ export default function App() {
 
     const hls = new Hls({
       enableWorker: true,
-      lowLatencyMode: true,
-      backBufferLength: 6,
-      maxBufferLength: 6,
-      maxMaxBufferLength: 10,
-      liveSyncDurationCount: 2,
-      liveMaxLatencyDurationCount: 4,
-      highBufferWatchdogPeriod: 1,
+      // Prioritize a stable, buffered playback over sitting right on the live
+      // edge — under heavy load (e.g. big match traffic) this avoids constant
+      // stalling at the cost of a few extra seconds of latency.
+      lowLatencyMode: false,
+      backBufferLength: 10,
+      maxBufferLength: 18,
+      maxMaxBufferLength: 30,
+      liveSyncDurationCount: 4,
+      liveMaxLatencyDurationCount: 8,
+      highBufferWatchdogPeriod: 2,
       nudgeMaxRetry: 5,
       manifestLoadingTimeOut: 12000,
       manifestLoadingMaxRetry: 999,
@@ -262,6 +257,16 @@ export default function App() {
       fragLoadingTimeOut: 15000,
       fragLoadingMaxRetry: 999,
       fragLoadingRetryDelay: 500,
+      // Carry over the last known bandwidth estimate across reconnects/reloads
+      // instead of starting from HLS.js's conservative default every time.
+      abrEwmaDefaultEstimate: bandwidthEstimateRef.current ?? 500000,
+      // Be quick to drop quality on a slowdown, but cautious about climbing
+      // back up — this is what actually prevents the "force max quality,
+      // then stall" cycle.
+      abrBandWidthFactor: 0.9,
+      abrBandWidthUpFactor: 0.6,
+      abrEwmaFastLive: 5,
+      abrEwmaSlowLive: 12,
       xhrSetup: (xhr) => { try { xhr.withCredentials = false; } catch {} },
     });
 
@@ -277,8 +282,12 @@ export default function App() {
     });
     hls.on(Hls.Events.LEVEL_LOADED, () => { if (video.paused && !isPausedRef.current) attemptPlay(); });
     hls.on(Hls.Events.FRAG_BUFFERED, () => {
-      if (hls.levels.length > 0 && getBufferedAhead(video) >= 4) {
-        hls.nextAutoLevel = hls.levels.length - 1;
+      // Let HLS.js's own ABR estimator pick the level based on real measured
+      // bandwidth — no longer force-jumping to the highest rung, which was
+      // causing stalls whenever the connection (or origin server) couldn't
+      // actually sustain it.
+      if (typeof hls.bandwidthEstimate === "number" && isFinite(hls.bandwidthEstimate)) {
+        bandwidthEstimateRef.current = hls.bandwidthEstimate;
       }
       if (video.paused && !isPausedRef.current) attemptPlay();
     });
@@ -287,7 +296,7 @@ export default function App() {
       if (isPausedRef.current) return;
       try {
         const lsp = hls.liveSyncPosition;
-        if (lsp !== null && isFinite(lsp) && video.currentTime < lsp - 8)
+        if (lsp !== null && isFinite(lsp) && video.currentTime < lsp - 16)
           video.currentTime = lsp;
       } catch {}
     });
