@@ -555,7 +555,7 @@ export default function App() {
         stuckLastTimeRef.current = video.currentTime;
         if (loadingSinceRef.current === null) {
           loadingSinceRef.current = Date.now();
-        } else if (Date.now() - loadingSinceRef.current >= 5000) {
+        } else if (Date.now() - loadingSinceRef.current >= 2000) {
           loadingSinceRef.current = null;
           manualRestart();
         }
@@ -693,7 +693,10 @@ export default function App() {
         onClick={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
       >
-        <StatusBadge status={status} onClick={snapToLive} />
+        <div className="flex items-center gap-1.5">
+          <StatusBadge status={status} onClick={snapToLive} />
+          <AutoRefreshBadge />
+        </div>
       </div>
 
       <video
@@ -926,6 +929,22 @@ function ControlBtn({
     >
       {children}
     </button>
+  );
+}
+
+function AutoRefreshBadge() {
+  return (
+    <span
+      className="flex items-center gap-1.5 rounded-full bg-black/35 backdrop-blur-[2px] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider"
+      style={{ color: "#1abfed" }}
+      aria-label="Auto Refresh enabled"
+    >
+      <span
+        className="h-1.5 w-1.5 rounded-full animate-pulse"
+        style={{ backgroundColor: "#1abfed" }}
+      />
+      <span>Auto Refresh</span>
+    </span>
   );
 }
 
