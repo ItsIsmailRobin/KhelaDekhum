@@ -237,15 +237,15 @@ export default function App() {
 
     const hls = new Hls({
       enableWorker: true,
-      // Prioritize a stable, buffered playback over sitting right on the live
-      // edge — under heavy load (e.g. big match traffic) this avoids constant
-      // stalling at the cost of a few extra seconds of latency.
-      lowLatencyMode: false,
-      backBufferLength: 10,
-      maxBufferLength: 18,
-      maxMaxBufferLength: 30,
-      liveSyncDurationCount: 4,
-      liveMaxLatencyDurationCount: 8,
+      // Balanced for live sports: stay close to the live edge, but keep
+      // enough buffer cushion to absorb short congestion spikes from the
+      // source without a visible freeze.
+      lowLatencyMode: true,
+      backBufferLength: 8,
+      maxBufferLength: 10,
+      maxMaxBufferLength: 16,
+      liveSyncDurationCount: 3,
+      liveMaxLatencyDurationCount: 6,
       highBufferWatchdogPeriod: 2,
       nudgeMaxRetry: 5,
       manifestLoadingTimeOut: 12000,
@@ -260,13 +260,13 @@ export default function App() {
       // Carry over the last known bandwidth estimate across reconnects/reloads
       // instead of starting from HLS.js's conservative default every time.
       abrEwmaDefaultEstimate: bandwidthEstimateRef.current ?? 500000,
-      // Be quick to drop quality on a slowdown, but cautious about climbing
-      // back up — this is what actually prevents the "force max quality,
-      // then stall" cycle.
+      // Drop quality quickly on a slowdown (avoids stalls), but climb back up
+      // more readily than a pure-stability tune once bandwidth is there —
+      // real measured bandwidth, never forced.
       abrBandWidthFactor: 0.9,
-      abrBandWidthUpFactor: 0.6,
-      abrEwmaFastLive: 5,
-      abrEwmaSlowLive: 12,
+      abrBandWidthUpFactor: 0.75,
+      abrEwmaFastLive: 4,
+      abrEwmaSlowLive: 10,
       xhrSetup: (xhr) => { try { xhr.withCredentials = false; } catch {} },
     });
 
@@ -296,7 +296,7 @@ export default function App() {
       if (isPausedRef.current) return;
       try {
         const lsp = hls.liveSyncPosition;
-        if (lsp !== null && isFinite(lsp) && video.currentTime < lsp - 16)
+        if (lsp !== null && isFinite(lsp) && video.currentTime < lsp - 10)
           video.currentTime = lsp;
       } catch {}
     });
