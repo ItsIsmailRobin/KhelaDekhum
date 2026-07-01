@@ -534,6 +534,25 @@ export default function App() {
     initPlayer();
   }, [initPlayer]);
 
+  // Briefly shows "Auto Refresh" in place of the Live/Connecting badge
+  // whenever the watchdog below fires an automatic reload.
+  const [autoRefreshFlash, setAutoRefreshFlash] = useState(false);
+  const autoRefreshFlashTimeoutRef = useRef<number | null>(null);
+  const triggerAutoRefresh = useCallback(() => {
+    manualRestart();
+    setAutoRefreshFlash(true);
+    if (autoRefreshFlashTimeoutRef.current) window.clearTimeout(autoRefreshFlashTimeoutRef.current);
+    autoRefreshFlashTimeoutRef.current = window.setTimeout(() => {
+      setAutoRefreshFlash(false);
+      autoRefreshFlashTimeoutRef.current = null;
+    }, 1000);
+  }, [manualRestart]);
+  useEffect(() => {
+    return () => {
+      if (autoRefreshFlashTimeoutRef.current) window.clearTimeout(autoRefreshFlashTimeoutRef.current);
+    };
+  }, []);
+
   // Auto-reload: if the stream is playing (not paused by the user) but the
   // video frame is frozen (currentTime not advancing) for 5 seconds, press
   // "Reload Stream" automatically. Also covers the "Connecting to Stream"
@@ -549,15 +568,15 @@ export default function App() {
         return;
       }
 
-      // Stuck while connecting: status has been "loading" for 5s+.
+      // Stuck while connecting: status has been "loading" for 3s+.
       if (status === "loading") {
         stuckSinceRef.current = null;
         stuckLastTimeRef.current = video.currentTime;
         if (loadingSinceRef.current === null) {
           loadingSinceRef.current = Date.now();
-        } else if (Date.now() - loadingSinceRef.current >= 2000) {
+        } else if (Date.now() - loadingSinceRef.current >= 3000) {
           loadingSinceRef.current = null;
-          manualRestart();
+          triggerAutoRefresh();
         }
         return;
       }
@@ -577,7 +596,7 @@ export default function App() {
           stuckSinceRef.current = Date.now();
         } else if (Date.now() - stuckSinceRef.current >= 5000) {
           stuckSinceRef.current = null;
-          manualRestart();
+          triggerAutoRefresh();
         }
       } else {
         stuckLastTimeRef.current = ct;
@@ -585,7 +604,7 @@ export default function App() {
       }
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [status, manualRestart]);
+  }, [status, triggerAutoRefresh]);
 
   const handleClearCache = useCallback(() => { setShowClearConfirm(true); }, []);
   const confirmClearCache = useCallback(() => { clearAllSiteData(); }, []);
@@ -693,10 +712,7 @@ export default function App() {
         onClick={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center gap-1.5">
-          <StatusBadge status={status} onClick={snapToLive} />
-          <AutoRefreshBadge />
-        </div>
+        {autoRefreshFlash ? <AutoRefreshBadge /> : <StatusBadge status={status} onClick={snapToLive} />}
       </div>
 
       <video
