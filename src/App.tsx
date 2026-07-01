@@ -63,30 +63,6 @@ function PauseIcon({ className = "h-9 w-9 text-white" }: { className?: string })
   );
 }
 
-function AspectRatioIcon({ className = "h-4 w-4 sm:h-5 sm:w-5 text-white" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 8V5a1 1 0 0 1 1-1h3" />
-      <path d="M17 4h3a1 1 0 0 1 1 1v3" />
-      <path d="M21 16v3a1 1 0 0 1-1 1h-3" />
-      <path d="M7 20H4a1 1 0 0 1-1-1v-3" />
-      <rect x="7.5" y="8.5" width="9" height="7" rx="1" />
-    </svg>
-  );
-}
-
-type AspectOption = { label: string; value: number | "fill" | null };
-
-const ASPECT_RATIOS: AspectOption[] = [
-  { label: "Auto", value: null },
-  { label: "16:9", value: 16 / 9 },
-  { label: "4:3", value: 4 / 3 },
-  { label: "1:1", value: 1 },
-  { label: "9:16", value: 9 / 16 },
-  { label: "21:9", value: 21 / 9 },
-  { label: "Fill", value: "fill" },
-];
-
 function PlayerIconShell({
   children,
   persistent = false,
@@ -174,9 +150,7 @@ export default function App() {
   const [streamUrl, setStreamUrl] = useState("");
   const [needsUnmute, setNeedsUnmute] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [aspectIndex, setAspectIndex] = useState(0);
-  const [showRatioMenu, setShowRatioMenu] = useState(false);
-  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+  const [filledMode, setFilledMode] = useState(false);
 
   const iosDevice = isIOS();
   const touchDev = isTouch();
@@ -397,25 +371,59 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const updateSize = () => setContainerSize({ w: el.clientWidth, h: el.clientHeight });
-    updateSize();
-    const ro = new ResizeObserver(updateSize);
-    ro.observe(el);
-    window.addEventListener("orientationchange", updateSize);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("orientationchange", updateSize);
-    };
-  }, []);
+    if (!isFullscreen) setFilledMode(false);
+  }, [isFullscreen]);
 
   useEffect(() => {
-    if (!showRatioMenu) return;
-    const close = () => setShowRatioMenu(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [showRatioMenu]);
+    const el = containerRef.current;
+    if (!el || !touchDev) return;
+
+    let startDist = 0;
+    let handled = false;
+
+    const dist = (touches: TouchList) => {
+      const [a, b] = [touches[0], touches[1]];
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (!isFullscreen) return;
+      if (e.touches.length === 2) {
+        startDist = dist(e.touches);
+        handled = false;
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isFullscreen || handled) return;
+      if (e.touches.length === 2 && startDist > 0) {
+        const delta = dist(e.touches) - startDist;
+        if (delta > 40) {
+          setFilledMode(true);
+          handled = true;
+        } else if (delta < -40) {
+          setFilledMode(false);
+          handled = true;
+        }
+      }
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        startDist = 0;
+        handled = false;
+      }
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("touchend", onTouchEnd, { passive: true });
+    el.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [isFullscreen, touchDev]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -579,36 +587,8 @@ export default function App() {
     if (v) applyVolume(v, next);
   }, []);
 
-  const selectedRatio = ASPECT_RATIOS[aspectIndex].value;
-  let videoStyle: React.CSSProperties = { position: "absolute" };
-  let objectFitClass = "object-contain";
-
-  if (selectedRatio === null) {
-    videoStyle = { ...videoStyle, inset: 0, width: "100%", height: "100%" };
-    objectFitClass = "object-contain";
-  } else if (selectedRatio === "fill") {
-    videoStyle = { ...videoStyle, inset: 0, width: "100%", height: "100%" };
-    objectFitClass = "object-fill";
-  } else if (containerSize.w > 0 && containerSize.h > 0) {
-    const ratio = selectedRatio as number;
-    let w = containerSize.w;
-    let h = w / ratio;
-    if (h > containerSize.h) {
-      h = containerSize.h;
-      w = h * ratio;
-    }
-    videoStyle = {
-      ...videoStyle,
-      left: (containerSize.w - w) / 2,
-      top: (containerSize.h - h) / 2,
-      width: w,
-      height: h,
-    };
-    objectFitClass = "object-cover";
-  } else {
-    videoStyle = { ...videoStyle, inset: 0, width: "100%", height: "100%" };
-    objectFitClass = "object-contain";
-  }
+  const videoStyle: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%" };
+  const objectFitClass = filledMode ? "object-cover" : "object-contain";
 
   const isInitialLoading = status === "loading" && !everRef.current;
   const shouldShowUnmuteOverlay = needsUnmute && status === "playing";
@@ -618,8 +598,7 @@ export default function App() {
     status !== "playing" ||
     isPaused ||
     needsUnmute ||
-    showClearConfirm ||
-    showRatioMenu;
+    showClearConfirm;
 
   return (
     <div
@@ -856,42 +835,6 @@ export default function App() {
                 <path d="M8 6l1-3h6l1 3" />
               </svg>
             </ControlBtn>
-
-            <div className="relative">
-              <ControlBtn
-                onClick={() => setShowRatioMenu((v) => !v)}
-                aria-label="Aspect ratio"
-                title="Aspect ratio"
-                isTouch={touchDev}
-              >
-                <AspectRatioIcon />
-              </ControlBtn>
-
-              {showRatioMenu && (
-                <div
-                  className="absolute bottom-full right-0 mb-2 w-32 rounded-xl bg-black/85 backdrop-blur-xl border border-white/15 p-1.5 shadow-2xl"
-                  onClick={(event) => event.stopPropagation()}
-                  onDoubleClick={(event) => event.stopPropagation()}
-                >
-                  {ASPECT_RATIOS.map((opt, idx) => (
-                    <button
-                      key={opt.label}
-                      onClick={() => {
-                        setAspectIndex(idx);
-                        setShowRatioMenu(false);
-                      }}
-                      className={`w-full rounded-lg px-3 py-1.5 text-left text-xs font-semibold transition-colors duration-150 ${
-                        idx === aspectIndex
-                          ? "bg-white/20 text-white"
-                          : "text-white/70 hover:bg-white/10 hover:text-white"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
 
             <ControlBtn
               onClick={toggleFullscreen}
