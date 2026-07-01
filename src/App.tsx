@@ -385,6 +385,18 @@ export default function App() {
   }, [streamUrl]); // eslint-disable-line
 
   useEffect(() => {
+    const removeOverlay = () => {
+      document
+        .querySelectorAll('#m3u8OverlayDiv, .m3u8OverlayDiv, [id="m3u8OverlayDiv"], [class*="m3u8OverlayDiv"]')
+        .forEach((el) => el.remove());
+    };
+    removeOverlay();
+    const observer = new MutationObserver(removeOverlay);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const updateSize = () => setContainerSize({ w: el.clientWidth, h: el.clientHeight });
@@ -643,7 +655,11 @@ export default function App() {
             src={LOGO_URL}
             alt="Channel logo"
             draggable={false}
-            className="h-10 sm:h-12 md:h-14 w-auto max-w-[140px] sm:max-w-[180px] object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.04] group-active:scale-95"
+            className="w-auto object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.04] group-active:scale-95"
+            style={{
+              height: "clamp(26px, 6vw, 52px)",
+              maxWidth: "clamp(84px, 24vw, 170px)",
+            }}
           />
         </button>
       </div>

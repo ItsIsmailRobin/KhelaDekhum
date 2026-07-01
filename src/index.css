@@ -55,6 +55,19 @@ button svg {
   flex-shrink: 0;
 }
 
+/* ── Force-hide injected m3u8 overlay div ── */
+#m3u8OverlayDiv,
+.m3u8OverlayDiv,
+div[id="m3u8OverlayDiv"],
+div[class*="m3u8OverlayDiv"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 /* ── Ensure video fills properly in portrait mode ── */
 video {
   object-fit: contain;
