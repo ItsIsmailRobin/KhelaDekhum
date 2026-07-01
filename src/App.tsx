@@ -391,11 +391,14 @@ export default function App() {
       if (e.touches.length === 2) {
         startDist = dist(e.touches);
         handled = false;
+        e.preventDefault();
       }
     };
     const onTouchMove = (e: TouchEvent) => {
-      if (!isFullscreen || handled) return;
-      if (e.touches.length === 2 && startDist > 0) {
+      if (!isFullscreen) return;
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        if (handled || startDist <= 0) return;
         const delta = dist(e.touches) - startDist;
         if (delta > 40) {
           setFilledMode(true);
@@ -413,8 +416,8 @@ export default function App() {
       }
     };
 
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
     el.addEventListener("touchend", onTouchEnd, { passive: true });
     el.addEventListener("touchcancel", onTouchEnd, { passive: true });
     return () => {
@@ -587,7 +590,7 @@ export default function App() {
     if (v) applyVolume(v, next);
   }, []);
 
-  const videoStyle: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%" };
+  const videoStyle: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none" };
   const objectFitClass = filledMode ? "object-cover" : "object-contain";
 
   const isInitialLoading = status === "loading" && !everRef.current;
