@@ -375,60 +375,6 @@ export default function App() {
   }, [isFullscreen]);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el || !touchDev) return;
-
-    let startDist = 0;
-    let handled = false;
-
-    const dist = (touches: TouchList) => {
-      const [a, b] = [touches[0], touches[1]];
-      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    };
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (!isFullscreen) return;
-      if (e.touches.length === 2) {
-        startDist = dist(e.touches);
-        handled = false;
-        e.preventDefault();
-      }
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (!isFullscreen) return;
-      if (e.touches.length === 2) {
-        e.preventDefault();
-        if (handled || startDist <= 0) return;
-        const delta = dist(e.touches) - startDist;
-        if (delta > 40) {
-          setFilledMode(true);
-          handled = true;
-        } else if (delta < -40) {
-          setFilledMode(false);
-          handled = true;
-        }
-      }
-    };
-    const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) {
-        startDist = 0;
-        handled = false;
-      }
-    };
-
-    el.addEventListener("touchstart", onTouchStart, { passive: false });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd, { passive: true });
-    el.addEventListener("touchcancel", onTouchEnd, { passive: true });
-    return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
-    };
-  }, [isFullscreen, touchDev]);
-
-  useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
@@ -836,6 +782,25 @@ export default function App() {
                 <path d="M10 11v6" />
                 <path d="M14 11v6" />
                 <path d="M8 6l1-3h6l1 3" />
+              </svg>
+            </ControlBtn>
+
+            <ControlBtn
+              onClick={() => setFilledMode((v) => !v)}
+              aria-label={filledMode ? "Fit to screen" : "Fill screen"}
+              title={filledMode ? "Fit to screen" : "Fill screen"}
+              isTouch={touchDev}
+            >
+              <svg className="h-4 w-4 sm:h-5 sm:w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 8V5a1 1 0 0 1 1-1h3" />
+                <path d="M16 4h3a1 1 0 0 1 1 1v3" />
+                <path d="M20 16v3a1 1 0 0 1-1 1h-3" />
+                <path d="M8 20H5a1 1 0 0 1-1-1v-3" />
+                {filledMode ? (
+                  <rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" stroke="none" />
+                ) : (
+                  <rect x="7" y="9" width="10" height="6" rx="1" fill="currentColor" stroke="none" />
+                )}
               </svg>
             </ControlBtn>
 
