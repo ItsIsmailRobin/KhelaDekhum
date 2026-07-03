@@ -676,7 +676,10 @@ export default function App() {
     <div
       ref={containerRef}
       className="relative h-screen w-screen bg-black overflow-hidden select-none"
-      style={{ height: "100dvh" }}
+      style={{
+        height: "100dvh",
+        cursor: isFullscreen && !controlsVisible ? "none" : "default",
+      }}
       onDoubleClick={toggleFullscreen}
     >
       <div className="absolute inset-0 pointer-events-none">
