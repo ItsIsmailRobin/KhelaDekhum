@@ -708,7 +708,7 @@ export default function App() {
             draggable={false}
             className="w-auto object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.04] group-active:scale-95"
             style={{
-              height: logoHeight ? `${logoHeight}px` : "clamp(23.4px, 5.4vw, 46.8px)",
+            height: logoHeight ? `${logoHeight}px` : "clamp(22.23px, 5.13vw, 44.46px)",
               maxWidth: logoMaxWidth ? `${logoMaxWidth}px` : "clamp(75.6px, 21.6vw, 153px)",
             }}
           />
