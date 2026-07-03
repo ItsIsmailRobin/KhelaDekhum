@@ -1,0 +1,5 @@
+#EXTM3U
+#EXTINF:-1 tvg-id="GEN.py" tvg-name="GEN",GEN TV
+#EXTVLCOPT:http-referrer=https://gen.com.py/
+#EXTHTTP:{"User-Agent":"Mozilla/5.0"}
+https://no.gendigi.net/origin-proxy/chunklist.m3u8

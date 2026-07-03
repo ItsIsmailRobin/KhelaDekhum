@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Hls from "hls.js";
 
-const STREAM_TXT_URL = "/stream.txt";
+const STREAM_TXT_URL = "/stream.m3u";
+// The playlist file only tells us *which* upstream URL to play. Actually
+// loading it goes through our own serverless proxy (/api/stream), which
+// attaches the Referer/User-Agent the upstream requires server-side — this
+// is what makes playback load reliably on every browser/IP instead of only
+// after the URL was first opened directly in a tab.
+const STREAM_PROXY_URL = "/api/stream";
 const LOGO_URL = "/logo.png";
 const VOLUME_STORAGE_KEY = "revtv-volume";
 
@@ -168,9 +174,18 @@ export default function App() {
       .then((res) => res.text())
       .then((text) => {
         if (cancelled) return;
-        const nextUrl = text.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
-        if (nextUrl) setStreamUrl(nextUrl);
-        else setStatus("error");
+        // stream.m3u is a real m3u playlist now (#EXTM3U / #EXTINF / #EXTVLCOPT
+        // / #EXTHTTP tags for external players like VLC), so skip comment
+        // lines and take the actual stream URL.
+        const nextUrl = text
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .find((line) => line && !line.startsWith("#"));
+        if (nextUrl) {
+          setStreamUrl(`${STREAM_PROXY_URL}?url=${encodeURIComponent(nextUrl)}`);
+        } else {
+          setStatus("error");
+        }
       })
       .catch(() => { if (!cancelled) setStatus("error"); });
     return () => { cancelled = true; };
