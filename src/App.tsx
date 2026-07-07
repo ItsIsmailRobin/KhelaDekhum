@@ -138,6 +138,7 @@ export default function App() {
   const restartCnt = useRef(0);
   const isPausedRef = useRef(false);
   const bandwidthEstimateRef = useRef<number | null>(null);
+  const wakeLockRef = useRef<any>(null);
 
   const [status, setStatus] = useState<"loading" | "playing" | "error">("loading");
   const [showControls, setShowControls] = useState(true);
@@ -466,6 +467,46 @@ export default function App() {
     };
   }, [status]);
 
+  // Screen Wake Lock: stop Android/iOS (16.4+) from dimming/locking the
+  // screen while the stream is actively playing. The lock is released
+  // automatically by the browser whenever the tab is hidden, so we
+  // re-request it on visibilitychange too.
+  const requestWakeLock = useCallback(async () => {
+    const nav = navigator as any;
+    if (!("wakeLock" in nav) || wakeLockRef.current || document.hidden) return;
+    try {
+      const sentinel = await nav.wakeLock.request("screen");
+      wakeLockRef.current = sentinel;
+      sentinel.addEventListener("release", () => {
+        if (wakeLockRef.current === sentinel) wakeLockRef.current = null;
+      });
+    } catch {
+      wakeLockRef.current = null;
+    }
+  }, []);
+
+  const releaseWakeLock = useCallback(() => {
+    const sentinel = wakeLockRef.current;
+    wakeLockRef.current = null;
+    if (sentinel) { try { sentinel.release(); } catch {} }
+  }, []);
+
+  useEffect(() => {
+    const shouldHold = status === "playing" && !isPaused;
+    if (shouldHold) requestWakeLock();
+    else releaseWakeLock();
+  }, [status, isPaused, requestWakeLock, releaseWakeLock]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden && status === "playing" && !isPaused) requestWakeLock();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [status, isPaused, requestWakeLock]);
+
+  useEffect(() => releaseWakeLock, [releaseWakeLock]);
+
   const toggleFullscreen = useCallback(async () => {
     const el = containerRef.current;
     const video = videoRef.current;
@@ -665,7 +706,6 @@ export default function App() {
   const isInitialLoading = status === "loading" && !everRef.current;
   const shouldShowUnmuteOverlay = needsUnmute && status === "playing";
   const controlsVisible =
-    (touchDev && !isFullscreen) ||
     showControls ||
     status !== "playing" ||
     isPaused ||
